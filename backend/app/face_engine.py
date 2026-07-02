@@ -63,7 +63,11 @@ class FaceEngine:
         if not faces:
             return None, "no_face"
         if len(faces) > 1:
-            return None, "multiple_faces"
+            faces.sort(key=lambda f: f.bbox[3] - f.bbox[1], reverse=True)
+            h1 = faces[0].bbox[3] - faces[0].bbox[1]
+            h2 = faces[1].bbox[3] - faces[1].bbox[1]
+            if h1 < h2 * config.KIOSK_DOMINANCE_RATIO:
+                return None, "multiple_faces"
         return faces[0].normed_embedding.astype(np.float32), None
 
     def reload_index(self):
