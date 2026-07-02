@@ -53,50 +53,12 @@ class MainActivity : FlutterActivity() {
             } catch (e: Exception) {
                 Log.w(TAG, "volume adjust failed: $e")
             }
-
-            val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-            if (uri == null) {
-                Log.w(TAG, "no ringtone uri on device, using beep")
-                beepFallback()
-                return
-            }
-            Log.d(TAG, "using ringtone uri $uri")
-
-            val mp = MediaPlayer()
-            mp.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
-            )
-            mp.setDataSource(applicationContext, uri)
-            mp.setOnPreparedListener {
-                it.start()
-                Log.d(TAG, "ring playing")
-            }
-            mp.setOnErrorListener { _, what, extra ->
-                Log.e(TAG, "MediaPlayer error what=$what extra=$extra, using beep")
-                beepFallback()
-                true
-            }
-            mp.prepareAsync()
-            player = mp
+            toneGen = ToneGenerator(AudioManager.STREAM_ALARM, ToneGenerator.MAX_VOLUME)
+            toneGen?.startTone(ToneGenerator.TONE_CDMA_ABBR_ALERT, 900)
+            handler.postDelayed({ stopRing() }, 1100)
+            Log.d(TAG, "confirmation beep playing")
         } catch (e: Exception) {
-            Log.e(TAG, "playRing failed: $e, using beep")
-            beepFallback()
-        }
-    }
-
-    private fun beepFallback() {
-        try {
-            toneGen = ToneGenerator(AudioManager.STREAM_ALARM, 100)
-            toneGen?.startTone(ToneGenerator.TONE_PROP_BEEP2, 1000)
-            handler.postDelayed({ stopRing() }, 1200)
-            Log.d(TAG, "beep fallback playing")
-        } catch (e: Exception) {
-            Log.e(TAG, "beep fallback failed: $e")
+            Log.e(TAG, "playRing failed: $e")
         }
     }
 
