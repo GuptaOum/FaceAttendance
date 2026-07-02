@@ -1,0 +1,16 @@
+services:
+  backend:
+    build: ./backend
+    image: face-attendance-backend:v1
+    restart: unless-stopped
+    ports:
+      - "80:8000"
+    environment:
+      - DB_PATH=/data/attendance.db
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env}
+      - MATCH_THRESHOLD=${MATCH_THRESHOLD:-0.45}
+    volumes:
+      - attendance-data:/data
+
+volumes:
+  attendance-data:
