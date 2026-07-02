@@ -1,0 +1,188 @@
+import 'package:flutter/material.dart';
+
+import '../api.dart';
+import 'enroll_screen.dart';
+import 'kiosk_screen.dart';
+import 'login_screen.dart';
+import 'report_screen.dart';
+
+class AdminHome extends StatefulWidget {
+  const AdminHome({super.key});
+
+  @override
+  State<AdminHome> createState() => _AdminHomeState();
+}
+
+class _AdminHomeState extends State<AdminHome> {
+  List<dynamic> _students = [];
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final students = await ApiClient.instance.listStudents();
+      setState(() => _students = students);
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _addStudentDialog() async {
+    final rollNo = TextEditingController();
+    final name = TextEditingController();
+    final className = TextEditingController();
+    final created = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add Student'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: rollNo, decoration: const InputDecoration(labelText: 'Roll No')),
+            TextField(controller: name, decoration: const InputDecoration(labelText: 'Name')),
+            TextField(controller: className, decoration: const InputDecoration(labelText: 'Class')),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Add')),
+        ],
+      ),
+    );
+    if (created != true || rollNo.text.trim().isEmpty || name.text.trim().isEmpty) return;
+    try {
+      await ApiClient.instance.createStudent(rollNo.text.trim(), name.text.trim(), className.text.trim());
+      await _refresh();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    }
+  }
+
+  Future<void> _logout() async {
+    await ApiClient.instance.logout();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (_) => false,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Face Attendance — Admin'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.assessment_outlined),
+            tooltip: 'Attendance report',
+            onPressed: () =>
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const ReportScreen())),
+          ),
+          IconButton(icon: const Icon(Icons.logout), tooltip: 'Logout', onPressed: _logout),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
+              : RefreshIndicator(
+                  onRefresh: _refresh,
+                  child: ListView.builder(
+                    itemCount: _students.length,
+                    itemBuilder: (_, i) {
+                      final s = _students[i];
+                      final enrolled = (s['enrolled_images'] as int) > 0;
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: enrolled ? Colors.green.shade100 : Colors.orange.shade100,
+                          child: Icon(enrolled ? Icons.verified_user : Icons.person_outline,
+                              color: enrolled ? Colors.green : Colors.orange),
+                        ),
+                        title: Text('${s['name']} (${s['roll_no']})'),
+                        subtitle: Text(enrolled
+                            ? '${s['class_name']} · ${s['enrolled_images']} face images enrolled'
+                            : '${s['class_name']} · Not enrolled yet'),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.camera_alt_outlined),
+                              tooltip: 'Enroll face',
+                              onPressed: () async {
+                                await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => EnrollScreen(
+                                        studentId: s['id'], studentName: s['name']),
+                                  ),
+                                );
+                                _refresh();
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              tooltip: 'Delete',
+                              onPressed: () async {
+                                final confirm = await showDialog<bool>(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: Text('Delete ${s['name']}?'),
+                                    actions: [
+                                      TextButton(
+                                          onPressed: () => Navigator.pop(ctx, false),
+                                          child: const Text('Cancel')),
+                                      FilledButton(
+                                          onPressed: () => Navigator.pop(ctx, true),
+                                          child: const Text('Delete')),
+                                    ],
+                                  ),
+                                );
+                                if (confirm == true) {
+                                  await ApiClient.instance.deleteStudent(s['id']);
+                                  _refresh();
+                                }
+                              },
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FloatingActionButton.extended(
+            heroTag: 'kiosk',
+            icon: const Icon(Icons.co_present),
+            label: const Text('Kiosk Mode'),
+            onPressed: () =>
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const KioskScreen())),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton.extended(
+            heroTag: 'add',
+            icon: const Icon(Icons.person_add),
+            label: const Text('Add Student'),
+            onPressed: _addStudentDialog,
+          ),
+        ],
+      ),
+    );
+  }
+}

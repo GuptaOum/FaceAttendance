@@ -1,0 +1,121 @@
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+
+class ApiException implements Exception {
+  final int statusCode;
+  final String message;
+  ApiException(this.statusCode, this.message);
+
+  @override
+  String toString() => message;
+}
+
+class ApiClient {
+  static final ApiClient instance = ApiClient._();
+  ApiClient._();
+
+  String baseUrl = '';
+  String? _token;
+  String role = '';
+
+  Future<void> loadSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    baseUrl = prefs.getString('baseUrl') ?? '';
+    _token = prefs.getString('token');
+    role = prefs.getString('role') ?? '';
+  }
+
+  bool get hasSession => _token != null && baseUrl.isNotEmpty;
+
+  Map<String, String> get _headers => {
+        if (_token != null) 'Authorization': 'Bearer $_token',
+      };
+
+  dynamic _decode(http.Response resp) {
+    final body = resp.body.isEmpty ? null : jsonDecode(utf8.decode(resp.bodyBytes));
+    if (resp.statusCode >= 400) {
+      var detail = 'Error ${resp.statusCode}';
+      if (body is Map && body['detail'] != null) {
+        final d = body['detail'];
+        detail = d is Map && d['message'] != null ? d['message'] : d.toString();
+      }
+      throw ApiException(resp.statusCode, detail);
+    }
+    return body;
+  }
+
+  Future<void> login(String server, String username, String password) async {
+    final url = server.replaceAll(RegExp(r'/+$'), '');
+    final resp = await http.post(
+      Uri.parse('$url/auth/login'),
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'username=${Uri.encodeComponent(username)}&password=${Uri.encodeComponent(password)}',
+    );
+    final data = _decode(resp);
+    baseUrl = url;
+    _token = data['access_token'];
+    role = data['role'];
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('baseUrl', baseUrl);
+    await prefs.setString('token', _token!);
+    await prefs.setString('role', role);
+  }
+
+  Future<void> logout() async {
+    _token = null;
+    role = '';
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('token');
+    await prefs.remove('role');
+  }
+
+  Future<List<dynamic>> listStudents() async {
+    final resp = await http.get(Uri.parse('$baseUrl/students'), headers: _headers);
+    return _decode(resp) as List<dynamic>;
+  }
+
+  Future<Map<String, dynamic>> createStudent(String rollNo, String name, String className) async {
+    final resp = await http.post(
+      Uri.parse('$baseUrl/students'),
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode({'roll_no': rollNo, 'name': name, 'class_name': className}),
+    );
+    return _decode(resp) as Map<String, dynamic>;
+  }
+
+  Future<void> deleteStudent(int id) async {
+    final resp = await http.delete(Uri.parse('$baseUrl/students/$id'), headers: _headers);
+    _decode(resp);
+  }
+
+  Future<Map<String, dynamic>> enroll(int studentId, List<String> imagePaths) async {
+    final req = http.MultipartRequest('POST', Uri.parse('$baseUrl/students/$studentId/enroll'));
+    req.headers.addAll(_headers);
+    for (final path in imagePaths) {
+      req.files.add(await http.MultipartFile.fromPath('images', path));
+    }
+    final resp = await http.Response.fromStream(await req.send());
+    return _decode(resp) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> recognize(String imagePath) async {
+    final req = http.MultipartRequest('POST', Uri.parse('$baseUrl/attendance/recognize'));
+    req.headers.addAll(_headers);
+    req.files.add(await http.MultipartFile.fromPath('image', imagePath));
+    final resp = await http.Response.fromStream(await req.send());
+    return _decode(resp) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> attendanceReport({String? day}) async {
+    final query = day == null ? '' : '?day=$day';
+    final resp = await http.get(Uri.parse('$baseUrl/attendance$query'), headers: _headers);
+    return _decode(resp) as Map<String, dynamic>;
+  }
+
+  Future<List<dynamic>> myAttendance() async {
+    final resp = await http.get(Uri.parse('$baseUrl/attendance/me'), headers: _headers);
+    return _decode(resp) as List<dynamic>;
+  }
+}
