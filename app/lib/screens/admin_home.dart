@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../api.dart';
 import 'enroll_screen.dart';
@@ -17,6 +18,16 @@ class _AdminHomeState extends State<AdminHome> {
   List<dynamic> _students = [];
   bool _loading = true;
   String? _error;
+  String _query = '';
+
+  List<dynamic> get _filtered => _query.isEmpty
+      ? _students
+      : _students
+          .where((s) =>
+              (s['name'] as String).toLowerCase().contains(_query) ||
+              (s['roll_no'] as String).contains(_query) ||
+              (s['class_name'] as String).toLowerCase().contains(_query))
+          .toList();
 
   @override
   void initState() {
@@ -50,12 +61,23 @@ class _AdminHomeState extends State<AdminHome> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: rollNo, decoration: const InputDecoration(labelText: 'Roll No')),
-            TextField(controller: name, decoration: const InputDecoration(labelText: 'Name')),
             TextField(
-                controller: className,
-                decoration: const InputDecoration(
-                    labelText: 'Group / Class', hintText: 'e.g. Class A')),
+              controller: rollNo,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(labelText: 'Roll No', hintText: 'Numbers only'),
+            ),
+            TextField(
+              controller: name,
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z .]'))],
+              decoration: const InputDecoration(labelText: 'Name', hintText: 'English letters only'),
+            ),
+            TextField(
+              controller: className,
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9 -]'))],
+              decoration: const InputDecoration(
+                  labelText: 'Group / Class', hintText: 'e.g. Class A'),
+            ),
           ],
         ),
         actions: [
@@ -139,12 +161,27 @@ class _AdminHomeState extends State<AdminHome> {
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
-              : RefreshIndicator(
-                  onRefresh: _refresh,
-                  child: ListView.builder(
-                    itemCount: _students.length,
-                    itemBuilder: (_, i) {
-                      final s = _students[i];
+              : Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                      child: TextField(
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.search),
+                          hintText: 'Search by name, roll no or group',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
+                      ),
+                    ),
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: _refresh,
+                        child: ListView.builder(
+                          itemCount: _filtered.length,
+                          itemBuilder: (_, i) {
+                            final s = _filtered[i];
                       final enrolled = (s['enrolled_images'] as int) > 0;
                       return ListTile(
                         leading: CircleAvatar(
@@ -199,9 +236,12 @@ class _AdminHomeState extends State<AdminHome> {
                             ),
                           ],
                         ),
-                      );
-                    },
-                  ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,

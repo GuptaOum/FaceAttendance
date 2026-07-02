@@ -113,3 +113,22 @@ class FaceEngine:
         if score < config.MATCH_THRESHOLD:
             return None
         return int(self._student_ids[best]), score
+
+    def find_duplicate(
+        self, embeddings: list[np.ndarray], owner_id: int, exclude_student_id: int
+    ) -> tuple[int, float] | None:
+        if self._matrix is None:
+            return None
+        mask = (self._owner_ids == owner_id) & (self._student_ids != exclude_student_id)
+        if not mask.any():
+            return None
+        best_id, best_score = None, 0.0
+        for emb in embeddings:
+            sims = self._matrix @ emb
+            sims[~mask] = -1.0
+            idx = int(np.argmax(sims))
+            if sims[idx] > best_score:
+                best_id, best_score = int(self._student_ids[idx]), float(sims[idx])
+        if best_id is not None and best_score >= config.DUPLICATE_FACE_THRESHOLD:
+            return best_id, best_score
+        return None

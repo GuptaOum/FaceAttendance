@@ -15,6 +15,15 @@ class _ReportScreenState extends State<ReportScreen> {
   String? _error;
   String _group = '';
   List<String> _groups = [];
+  String _query = '';
+
+  List<dynamic> _filter(List<dynamic> rows) => _query.isEmpty
+      ? rows
+      : rows
+          .where((s) =>
+              (s['name'] as String).toLowerCase().contains(_query) ||
+              (s['roll_no'] as String).contains(_query))
+          .toList();
 
   @override
   void initState() {
@@ -61,8 +70,8 @@ class _ReportScreenState extends State<ReportScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final present = (_report?['present'] as List<dynamic>?) ?? [];
-    final absent = (_report?['absent'] as List<dynamic>?) ?? [];
+    final present = _filter((_report?['present'] as List<dynamic>?) ?? []);
+    final absent = _filter((_report?['absent'] as List<dynamic>?) ?? []);
     return Scaffold(
       appBar: AppBar(
         title: Text('Attendance — $_dayStr'),
@@ -77,6 +86,18 @@ class _ReportScreenState extends State<ReportScreen> {
               ? const Center(child: CircularProgressIndicator())
               : ListView(
                   children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                      child: TextField(
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.search),
+                          hintText: 'Search by name or roll no',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
+                      ),
+                    ),
                     if (_groups.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),

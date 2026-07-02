@@ -14,5 +14,6 @@ KIOSK_DOMINANCE_RATIO = float(os.environ.get("KIOSK_DOMINANCE_RATIO", "1.4"))
 KIOSK_CENTER_TOLERANCE = float(os.environ.get("KIOSK_CENTER_TOLERANCE", "0.28"))
 ANTISPOOF_ENABLED = os.environ.get("ANTISPOOF_ENABLED", "1") == "1"
 ANTISPOOF_THRESHOLD = float(os.environ.get("ANTISPOOF_THRESHOLD", "0.5"))
+DUPLICATE_FACE_THRESHOLD = float(os.environ.get("DUPLICATE_FACE_THRESHOLD", "0.55"))
 MIN_ENROLL_IMAGES = int(os.environ.get("MIN_ENROLL_IMAGES", "5"))
 MAX_ENROLL_IMAGES = int(os.environ.get("MAX_ENROLL_IMAGES", "10"))

@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel
 
@@ -7,6 +9,10 @@ from ..face_engine import EnrollmentError
 from ..security import require_teacher
 
 router = APIRouter(prefix="/students", tags=["students"])
+
+ROLL_RE = re.compile(r"^\d{1,20}$")
+NAME_RE = re.compile(r"^[A-Za-z][A-Za-z .]{0,59}$")
+CLASS_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 -]{0,39}$")
 
 
 class StudentIn(BaseModel):
@@ -26,8 +32,13 @@ def _owned_student(conn, student_id: int, user: dict):
 def create_student(body: StudentIn, user: dict = Depends(require_teacher)):
     roll_no = body.roll_no.strip()
     name = body.name.strip()
-    if not roll_no or not name:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Roll number and name are required")
+    class_name = body.class_name.strip()
+    if not ROLL_RE.match(roll_no):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Roll number must be digits only")
+    if not NAME_RE.match(name):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Name must be English letters only")
+    if class_name and not CLASS_RE.match(class_name):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Group/class must be letters and numbers only")
     with get_db() as conn:
         existing = conn.execute(
             "SELECT id FROM students WHERE owner_id = ? AND roll_no = ?", (user["id"], roll_no)
@@ -36,10 +47,10 @@ def create_student(body: StudentIn, user: dict = Depends(require_teacher)):
             raise HTTPException(status.HTTP_409_CONFLICT, "You already have a student with this roll number")
         cur = conn.execute(
             "INSERT INTO students (owner_id, roll_no, name, class_name) VALUES (?, ?, ?, ?)",
-            (user["id"], roll_no, name, body.class_name.strip()),
+            (user["id"], roll_no, name, class_name),
         )
         student_id = cur.lastrowid
-    return {"id": student_id, "roll_no": roll_no, "name": name, "class_name": body.class_name.strip()}
+    return {"id": student_id, "roll_no": roll_no, "name": name, "class_name": class_name}
 
 
 @router.get("/groups")
@@ -103,6 +114,16 @@ async def enroll_student(
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             {"message": f"Only {len(accepted)} usable images, need {config.MIN_ENROLL_IMAGES}", "rejected": rejected},
+        )
+
+    duplicate = engine.find_duplicate(accepted, owner_id=user["id"], exclude_student_id=student_id)
+    if duplicate is not None:
+        dup_id, dup_score = duplicate
+        with get_db() as conn:
+            existing = conn.execute("SELECT roll_no, name FROM students WHERE id = ?", (dup_id,)).fetchone()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"This face is already enrolled as {existing['name']} (roll no {existing['roll_no']})",
         )
 
     with get_db() as conn:
