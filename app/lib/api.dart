@@ -143,4 +143,36 @@ class ApiClient {
     final resp = await http.get(Uri.parse('$baseUrl/attendance/me'), headers: _headers);
     return _decode(resp) as List<dynamic>;
   }
+
+  Future<void> deleteAttendance(int attendanceId) async {
+    final resp =
+        await http.delete(Uri.parse('$baseUrl/attendance/$attendanceId'), headers: _headers);
+    _decode(resp);
+  }
+
+  Future<List<dynamic>> listSessions() async {
+    final resp = await http.get(Uri.parse('$baseUrl/sessions'), headers: _headers);
+    return _decode(resp) as List<dynamic>;
+  }
+
+  Future<Map<String, dynamic>> createSession(
+      String title, String groupName, String date, String startTime, String endTime) async {
+    final resp = await http.post(
+      Uri.parse('$baseUrl/sessions'),
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'title': title,
+        'group_name': groupName,
+        'date': date,
+        'start_time': startTime,
+        'end_time': endTime,
+      }),
+    );
+    return _decode(resp) as Map<String, dynamic>;
+  }
+
+  Future<void> deleteSession(int sessionId) async {
+    final resp = await http.delete(Uri.parse('$baseUrl/sessions/$sessionId'), headers: _headers);
+    _decode(resp);
+  }
 }

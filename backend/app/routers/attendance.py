@@ -1,11 +1,24 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, File, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 
 from ..db import get_db
 from ..security import require_teacher
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
+
+
+@router.delete("/{attendance_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_attendance(attendance_id: int, user: dict = Depends(require_teacher)):
+    with get_db() as conn:
+        row = conn.execute(
+            """SELECT a.id FROM attendance a JOIN students s ON s.id = a.student_id
+               WHERE a.id = ? AND s.owner_id = ?""",
+            (attendance_id, user["id"]),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Attendance record not found")
+        conn.execute("DELETE FROM attendance WHERE id = ?", (attendance_id,))
 
 
 @router.post("/recognize")
@@ -60,7 +73,8 @@ def attendance_report(day: str | None = None, group: str | None = None, user: di
     params = {"target": target, "owner": user["id"], "group": group}
     with get_db() as conn:
         present = conn.execute(
-            f"""SELECT s.id, s.roll_no, s.name, s.class_name, a.marked_at, a.confidence
+            f"""SELECT s.id, s.roll_no, s.name, s.class_name, a.marked_at, a.confidence,
+                      a.id AS attendance_id
                FROM attendance a JOIN students s ON s.id = a.student_id
                WHERE a.date = :target AND s.owner_id = :owner{group_filter} ORDER BY a.marked_at""",
             params,

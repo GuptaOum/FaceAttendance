@@ -123,6 +123,39 @@ class _ReportScreenState extends State<ReportScreen> {
                           leading: const Icon(Icons.check_circle, color: Colors.green),
                           title: Text('${s['name']} (${s['roll_no']})'),
                           subtitle: Text('${s['class_name']} · marked at ${s['marked_at']}'),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.delete_outline),
+                            tooltip: 'Remove this attendance',
+                            onPressed: () async {
+                              final confirm = await showDialog<bool>(
+                                context: context,
+                                builder: (ctx) => AlertDialog(
+                                  title: Text('Remove attendance for ${s['name']}?'),
+                                  content: Text('${s['name']} will be marked absent for $_dayStr.'),
+                                  actions: [
+                                    TextButton(
+                                        onPressed: () => Navigator.pop(ctx, false),
+                                        child: const Text('Cancel')),
+                                    FilledButton(
+                                        onPressed: () => Navigator.pop(ctx, true),
+                                        child: const Text('Remove')),
+                                  ],
+                                ),
+                              );
+                              if (confirm == true) {
+                                try {
+                                  await ApiClient.instance
+                                      .deleteAttendance(s['attendance_id']);
+                                  _load();
+                                } catch (e) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text(e.toString())));
+                                  }
+                                }
+                              }
+                            },
+                          ),
                         )),
                     const Divider(),
                     ListTile(

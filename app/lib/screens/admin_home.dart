@@ -6,6 +6,7 @@ import 'enroll_screen.dart';
 import 'kiosk_screen.dart';
 import 'login_screen.dart';
 import 'report_screen.dart';
+import 'sessions_screen.dart';
 
 class AdminHome extends StatefulWidget {
   const AdminHome({super.key});
@@ -148,6 +149,12 @@ class _AdminHomeState extends State<AdminHome> {
       appBar: AppBar(
         title: const Text('Face Attendance'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.event_note),
+            tooltip: 'Sessions',
+            onPressed: () =>
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const SessionsScreen())),
+          ),
           IconButton(
             icon: const Icon(Icons.assessment_outlined),
             tooltip: 'Attendance report',
