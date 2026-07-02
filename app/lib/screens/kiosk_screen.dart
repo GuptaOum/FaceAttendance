@@ -3,10 +3,12 @@ import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
+import 'package:flutter/services.dart';
 
 import '../api.dart';
 import 'widgets/face_overlay.dart';
+
+const _sound = MethodChannel('face_attendance/sound');
 
 class KioskScreen extends StatefulWidget {
   final String? group;
@@ -59,9 +61,12 @@ class _KioskScreenState extends State<KioskScreen> {
         final student = result['student'];
         final already = result['already_marked'] == true;
         if (!already) {
-          final player = FlutterRingtonePlayer();
-          player.playRingtone(volume: 0.8);
-          Future.delayed(const Duration(seconds: 1), player.stop);
+          try {
+            _sound.invokeMethod('playRing');
+            Future.delayed(const Duration(seconds: 1), () => _sound.invokeMethod('stopRing'));
+          } on PlatformException {
+            // sound is best-effort; attendance is already saved
+          }
         }
         setState(() {
           _icon = already ? Icons.info : Icons.check_circle;
