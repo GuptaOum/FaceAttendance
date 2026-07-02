@@ -68,7 +68,14 @@ class FaceEngine:
             h2 = faces[1].bbox[3] - faces[1].bbox[1]
             if h1 < h2 * config.KIOSK_DOMINANCE_RATIO:
                 return None, "multiple_faces"
-        return faces[0].normed_embedding.astype(np.float32), None
+        face = faces[0]
+        img_h, img_w = img.shape[:2]
+        cx = (face.bbox[0] + face.bbox[2]) / 2
+        cy = (face.bbox[1] + face.bbox[3]) / 2
+        if (abs(cx - img_w / 2) > img_w * config.KIOSK_CENTER_TOLERANCE
+                or abs(cy - img_h / 2) > img_h * config.KIOSK_CENTER_TOLERANCE):
+            return None, "not_centered"
+        return face.normed_embedding.astype(np.float32), None
 
     def reload_index(self):
         with get_db() as conn:

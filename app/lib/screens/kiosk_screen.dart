@@ -85,6 +85,12 @@ class _KioskScreenState extends State<KioskScreen> {
           _color = Colors.orange;
           _message = 'One person at a time please';
         });
+      } else if (result['reason'] == 'not_centered') {
+        setState(() {
+          _icon = Icons.center_focus_strong;
+          _color = Colors.orange;
+          _message = 'Bring your face into the oval';
+        });
       } else {
         setState(() {
           _icon = Icons.help_outline;
