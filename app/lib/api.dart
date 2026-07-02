@@ -115,16 +115,26 @@ class ApiClient {
     return _decode(resp) as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> recognize(String imagePath) async {
-    final req = http.MultipartRequest('POST', Uri.parse('$baseUrl/attendance/recognize'));
+  Future<Map<String, dynamic>> recognize(String imagePath, {String? group}) async {
+    final query = group == null || group.isEmpty ? '' : '?group=${Uri.encodeQueryComponent(group)}';
+    final req = http.MultipartRequest('POST', Uri.parse('$baseUrl/attendance/recognize$query'));
     req.headers.addAll(_headers);
     req.files.add(await http.MultipartFile.fromPath('image', imagePath));
     final resp = await http.Response.fromStream(await req.send());
     return _decode(resp) as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> attendanceReport({String? day}) async {
-    final query = day == null ? '' : '?day=$day';
+  Future<List<dynamic>> listGroups() async {
+    final resp = await http.get(Uri.parse('$baseUrl/students/groups'), headers: _headers);
+    return _decode(resp) as List<dynamic>;
+  }
+
+  Future<Map<String, dynamic>> attendanceReport({String? day, String? group}) async {
+    final params = <String>[
+      if (day != null) 'day=$day',
+      if (group != null && group.isNotEmpty) 'group=${Uri.encodeQueryComponent(group)}',
+    ];
+    final query = params.isEmpty ? '' : '?${params.join('&')}';
     final resp = await http.get(Uri.parse('$baseUrl/attendance$query'), headers: _headers);
     return _decode(resp) as Map<String, dynamic>;
   }

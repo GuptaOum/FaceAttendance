@@ -5,6 +5,7 @@ import numpy as np
 from insightface.app import FaceAnalysis
 
 from . import config
+from .antispoof import AntiSpoof
 from .db import get_db
 
 
@@ -16,6 +17,7 @@ class FaceEngine:
     def __init__(self):
         self._analyzer = FaceAnalysis(name="buffalo_l", providers=["CPUExecutionProvider"])
         self._analyzer.prepare(ctx_id=0, det_size=(640, 640))
+        self._antispoof = AntiSpoof() if config.ANTISPOOF_ENABLED else None
         self._lock = threading.Lock()
         self._matrix: np.ndarray | None = None
         self._student_ids: list[int] = []
@@ -75,6 +77,8 @@ class FaceEngine:
         if (abs(cx - img_w / 2) > img_w * config.KIOSK_CENTER_TOLERANCE
                 or abs(cy - img_h / 2) > img_h * config.KIOSK_CENTER_TOLERANCE):
             return None, "not_centered"
+        if self._antispoof is not None and not self._antispoof.is_live(img, face.bbox):
+            return None, "spoof"
         return face.normed_embedding.astype(np.float32), None
 
     def reload_index(self):
@@ -85,17 +89,21 @@ class FaceEngine:
             ).fetchall()
         if not rows:
             self._matrix = None
-            self._student_ids = []
+            self._student_ids = np.array([], dtype=np.int64)
             self._owner_ids = np.array([], dtype=np.int64)
             return
-        self._student_ids = [r["student_id"] for r in rows]
+        self._student_ids = np.array([r["student_id"] for r in rows], dtype=np.int64)
         self._owner_ids = np.array([r["owner_id"] for r in rows], dtype=np.int64)
         self._matrix = np.stack([np.frombuffer(r["vector"], dtype=np.float32) for r in rows])
 
-    def match(self, embedding: np.ndarray, owner_id: int) -> tuple[int, float] | None:
+    def match(
+        self, embedding: np.ndarray, owner_id: int, allowed_ids: set[int] | None = None
+    ) -> tuple[int, float] | None:
         if self._matrix is None:
             return None
         mask = self._owner_ids == owner_id
+        if allowed_ids is not None:
+            mask &= np.isin(self._student_ids, list(allowed_ids))
         if not mask.any():
             return None
         sims = self._matrix @ embedding
@@ -104,4 +112,4 @@ class FaceEngine:
         score = float(sims[best])
         if score < config.MATCH_THRESHOLD:
             return None
-        return self._student_ids[best], score
+        return int(self._student_ids[best]), score

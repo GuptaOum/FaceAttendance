@@ -42,6 +42,18 @@ def create_student(body: StudentIn, user: dict = Depends(require_teacher)):
     return {"id": student_id, "roll_no": roll_no, "name": name, "class_name": body.class_name.strip()}
 
 
+@router.get("/groups")
+def list_groups(user: dict = Depends(require_teacher)):
+    with get_db() as conn:
+        rows = conn.execute(
+            """SELECT class_name AS name, COUNT(*) AS students
+               FROM students WHERE owner_id = ? AND class_name != ''
+               GROUP BY class_name ORDER BY class_name""",
+            (user["id"],),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 @router.get("")
 def list_students(user: dict = Depends(require_teacher)):
     with get_db() as conn:

@@ -52,7 +52,10 @@ class _AdminHomeState extends State<AdminHome> {
           children: [
             TextField(controller: rollNo, decoration: const InputDecoration(labelText: 'Roll No')),
             TextField(controller: name, decoration: const InputDecoration(labelText: 'Name')),
-            TextField(controller: className, decoration: const InputDecoration(labelText: 'Class')),
+            TextField(
+                controller: className,
+                decoration: const InputDecoration(
+                    labelText: 'Group / Class', hintText: 'e.g. Class A')),
           ],
         ),
         actions: [
@@ -70,6 +73,42 @@ class _AdminHomeState extends State<AdminHome> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
       }
     }
+  }
+
+  Future<void> _openKiosk() async {
+    List<dynamic> groups = [];
+    try {
+      groups = await ApiClient.instance.listGroups();
+    } catch (_) {}
+    if (!mounted) return;
+    String? group;
+    if (groups.isNotEmpty) {
+      group = await showDialog<String>(
+        context: context,
+        builder: (ctx) => SimpleDialog(
+          title: const Text('Kiosk for which group?'),
+          children: [
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, ''),
+              child: const Text('All my students'),
+            ),
+            ...groups.map((g) => SimpleDialogOption(
+                  onPressed: () => Navigator.pop(ctx, g['name'] as String),
+                  child: Text('${g['name']} (${g['students']} students)'),
+                )),
+          ],
+        ),
+      );
+      if (group == null) return;
+    }
+    if (!mounted) return;
+    final selected = group;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+          builder: (_) =>
+              KioskScreen(group: selected == null || selected.isEmpty ? null : selected)),
+    );
   }
 
   Future<void> _logout() async {
@@ -171,8 +210,7 @@ class _AdminHomeState extends State<AdminHome> {
             heroTag: 'kiosk',
             icon: const Icon(Icons.co_present),
             label: const Text('Kiosk Mode'),
-            onPressed: () =>
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const KioskScreen())),
+            onPressed: _openKiosk,
           ),
           const SizedBox(height: 12),
           FloatingActionButton.extended(

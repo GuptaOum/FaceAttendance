@@ -8,7 +8,8 @@ import '../api.dart';
 import 'widgets/face_overlay.dart';
 
 class KioskScreen extends StatefulWidget {
-  const KioskScreen({super.key});
+  final String? group;
+  const KioskScreen({super.key, this.group});
 
   @override
   State<KioskScreen> createState() => _KioskScreenState();
@@ -50,7 +51,7 @@ class _KioskScreenState extends State<KioskScreen> {
     try {
       final file = await _camera!.takePicture();
       path = file.path;
-      final result = await ApiClient.instance.recognize(path);
+      final result = await ApiClient.instance.recognize(path, group: widget.group);
       if (!mounted) return;
 
       if (result['matched'] == true) {
@@ -90,6 +91,12 @@ class _KioskScreenState extends State<KioskScreen> {
           _icon = Icons.center_focus_strong;
           _color = Colors.orange;
           _message = 'Bring your face into the oval';
+        });
+      } else if (result['reason'] == 'spoof') {
+        setState(() {
+          _icon = Icons.no_photography;
+          _color = Colors.red;
+          _message = 'Photo detected!\nPlease show your real face';
         });
       } else {
         setState(() {
@@ -159,6 +166,17 @@ class _KioskScreenState extends State<KioskScreen> {
                     onPressed: () => Navigator.pop(context),
                   ),
                 ),
+                if (widget.group != null)
+                  Positioned(
+                    bottom: 24,
+                    left: 0,
+                    right: 0,
+                    child: Text(
+                      'Session: ${widget.group}',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white70, fontSize: 16),
+                    ),
+                  ),
               ],
             ),
     );

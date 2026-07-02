@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN python -c "from insightface.app import FaceAnalysis; FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider'])"
 
 COPY app ./app
+COPY models ./models
 
 ENV DB_PATH=/data/attendance.db
 VOLUME /data

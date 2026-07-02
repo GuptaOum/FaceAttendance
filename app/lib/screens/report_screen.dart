@@ -13,11 +13,21 @@ class _ReportScreenState extends State<ReportScreen> {
   DateTime _day = DateTime.now();
   Map<String, dynamic>? _report;
   String? _error;
+  String _group = '';
+  List<String> _groups = [];
 
   @override
   void initState() {
     super.initState();
+    _loadGroups();
     _load();
+  }
+
+  Future<void> _loadGroups() async {
+    try {
+      final groups = await ApiClient.instance.listGroups();
+      setState(() => _groups = groups.map((g) => g['name'] as String).toList());
+    } catch (_) {}
   }
 
   String get _dayStr =>
@@ -29,7 +39,7 @@ class _ReportScreenState extends State<ReportScreen> {
       _error = null;
     });
     try {
-      final report = await ApiClient.instance.attendanceReport(day: _dayStr);
+      final report = await ApiClient.instance.attendanceReport(day: _dayStr, group: _group);
       setState(() => _report = report);
     } catch (e) {
       setState(() => _error = e.toString());
@@ -67,6 +77,23 @@ class _ReportScreenState extends State<ReportScreen> {
               ? const Center(child: CircularProgressIndicator())
               : ListView(
                   children: [
+                    if (_groups.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                        child: DropdownButtonFormField<String>(
+                          initialValue: _group,
+                          decoration: const InputDecoration(
+                              labelText: 'Group', border: OutlineInputBorder()),
+                          items: [
+                            const DropdownMenuItem(value: '', child: Text('All groups')),
+                            ..._groups.map((g) => DropdownMenuItem(value: g, child: Text(g))),
+                          ],
+                          onChanged: (v) {
+                            setState(() => _group = v ?? '');
+                            _load();
+                          },
+                        ),
+                      ),
                     ListTile(
                       title: Text('Present (${present.length})',
                           style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
