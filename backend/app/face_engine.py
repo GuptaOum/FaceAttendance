@@ -52,14 +52,15 @@ class FaceEngine:
                 raise EnrollmentError("Image too blurry, hold the camera steady")
         return face.normed_embedding.astype(np.float32)
 
-    def embed_largest_face(self, image_bytes: bytes) -> np.ndarray | None:
+    def embed_kiosk_face(self, image_bytes: bytes) -> tuple[np.ndarray | None, str | None]:
         img = self._decode(image_bytes)
         faces = self._detect(img)
         faces = [f for f in faces if f.det_score >= config.MIN_DET_SCORE]
         if not faces:
-            return None
-        largest = max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
-        return largest.normed_embedding.astype(np.float32)
+            return None, "no_face"
+        if len(faces) > 1:
+            return None, "multiple_faces"
+        return faces[0].normed_embedding.astype(np.float32), None
 
     def reload_index(self):
         with get_db() as conn:

@@ -79,6 +79,12 @@ class _KioskScreenState extends State<KioskScreen> {
           _color = Colors.white;
           _message = 'Position your face inside the oval';
         });
+      } else if (result['reason'] == 'multiple_faces') {
+        setState(() {
+          _icon = Icons.groups;
+          _color = Colors.orange;
+          _message = 'One person at a time please';
+        });
       } else {
         setState(() {
           _icon = Icons.help_outline;

@@ -11,9 +11,9 @@ router = APIRouter(prefix="/attendance", tags=["attendance"])
 @router.post("/recognize")
 async def recognize(request: Request, image: UploadFile = File(...), _: dict = Depends(require_admin)):
     engine = request.app.state.engine
-    embedding = engine.embed_largest_face(await image.read())
+    embedding, reason = engine.embed_kiosk_face(await image.read())
     if embedding is None:
-        return {"matched": False, "reason": "no_face"}
+        return {"matched": False, "reason": reason}
 
     result = engine.match(embedding)
     if result is None:
