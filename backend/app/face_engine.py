@@ -54,8 +54,12 @@ class FaceEngine:
 
     def embed_kiosk_face(self, image_bytes: bytes) -> tuple[np.ndarray | None, str | None]:
         img = self._decode(image_bytes)
+        min_height = img.shape[0] * config.KIOSK_MIN_FACE_RATIO
         faces = self._detect(img)
-        faces = [f for f in faces if f.det_score >= config.MIN_DET_SCORE]
+        faces = [
+            f for f in faces
+            if f.det_score >= config.MIN_DET_SCORE and (f.bbox[3] - f.bbox[1]) >= min_height
+        ]
         if not faces:
             return None, "no_face"
         if len(faces) > 1:
