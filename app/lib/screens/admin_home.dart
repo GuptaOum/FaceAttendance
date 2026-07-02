@@ -85,7 +85,7 @@ class _AdminHomeState extends State<AdminHome> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Face Attendance — Admin'),
+        title: const Text('Face Attendance'),
         actions: [
           IconButton(
             icon: const Icon(Icons.assessment_outlined),

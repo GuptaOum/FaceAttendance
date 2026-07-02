@@ -1,21 +1,21 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Request, UploadFile
 
 from ..db import get_db
-from ..security import get_current_user, require_admin
+from ..security import require_teacher
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
 
 
 @router.post("/recognize")
-async def recognize(request: Request, image: UploadFile = File(...), _: dict = Depends(require_admin)):
+async def recognize(request: Request, image: UploadFile = File(...), user: dict = Depends(require_teacher)):
     engine = request.app.state.engine
     embedding, reason = engine.embed_kiosk_face(await image.read())
     if embedding is None:
         return {"matched": False, "reason": reason}
 
-    result = engine.match(embedding)
+    result = engine.match(embedding, owner_id=user["id"])
     if result is None:
         return {"matched": False, "reason": "unknown_face"}
 
@@ -41,31 +41,20 @@ async def recognize(request: Request, image: UploadFile = File(...), _: dict = D
 
 
 @router.get("")
-def attendance_report(day: str | None = None, _: dict = Depends(require_admin)):
+def attendance_report(day: str | None = None, user: dict = Depends(require_teacher)):
     target = day or date.today().isoformat()
     with get_db() as conn:
         present = conn.execute(
             """SELECT s.id, s.roll_no, s.name, s.class_name, a.marked_at, a.confidence
                FROM attendance a JOIN students s ON s.id = a.student_id
-               WHERE a.date = ? ORDER BY a.marked_at""",
-            (target,),
+               WHERE a.date = ? AND s.owner_id = ? ORDER BY a.marked_at""",
+            (target, user["id"]),
         ).fetchall()
         absent = conn.execute(
             """SELECT s.id, s.roll_no, s.name, s.class_name FROM students s
-               WHERE s.id NOT IN (SELECT student_id FROM attendance WHERE date = ?)
+               WHERE s.owner_id = ?
+                 AND s.id NOT IN (SELECT student_id FROM attendance WHERE date = ?)
                ORDER BY s.roll_no""",
-            (target,),
+            (user["id"], target),
         ).fetchall()
     return {"date": target, "present": [dict(r) for r in present], "absent": [dict(r) for r in absent]}
-
-
-@router.get("/me")
-def my_attendance(user: dict = Depends(get_current_user)):
-    if user["student_id"] is None:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Not a student account")
-    with get_db() as conn:
-        rows = conn.execute(
-            "SELECT date, marked_at, confidence FROM attendance WHERE student_id = ? ORDER BY date DESC LIMIT 90",
-            (user["student_id"],),
-        ).fetchall()
-    return [dict(r) for r in rows]

@@ -12,17 +12,19 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
+const kDefaultServer = 'http://3.109.177.77';
+
 class ApiClient {
   static final ApiClient instance = ApiClient._();
   ApiClient._();
 
-  String baseUrl = '';
+  String baseUrl = kDefaultServer;
   String? _token;
   String role = '';
 
   Future<void> loadSession() async {
     final prefs = await SharedPreferences.getInstance();
-    baseUrl = prefs.getString('baseUrl') ?? '';
+    baseUrl = prefs.getString('baseUrl') ?? kDefaultServer;
     _token = prefs.getString('token');
     role = prefs.getString('role') ?? '';
   }
@@ -46,14 +48,7 @@ class ApiClient {
     return body;
   }
 
-  Future<void> login(String server, String username, String password) async {
-    final url = server.replaceAll(RegExp(r'/+$'), '');
-    final resp = await http.post(
-      Uri.parse('$url/auth/login'),
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: 'username=${Uri.encodeComponent(username)}&password=${Uri.encodeComponent(password)}',
-    );
-    final data = _decode(resp);
+  Future<void> _storeSession(String url, dynamic data) async {
     baseUrl = url;
     _token = data['access_token'];
     role = data['role'];
@@ -61,6 +56,26 @@ class ApiClient {
     await prefs.setString('baseUrl', baseUrl);
     await prefs.setString('token', _token!);
     await prefs.setString('role', role);
+  }
+
+  Future<void> login(String server, String username, String password) async {
+    final url = server.replaceAll(RegExp(r'/+$'), '');
+    final resp = await http.post(
+      Uri.parse('$url/auth/login'),
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'username=${Uri.encodeComponent(username)}&password=${Uri.encodeComponent(password)}',
+    );
+    await _storeSession(url, _decode(resp));
+  }
+
+  Future<void> signup(String server, String username, String password) async {
+    final url = server.replaceAll(RegExp(r'/+$'), '');
+    final resp = await http.post(
+      Uri.parse('$url/auth/signup'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'username': username, 'password': password}),
+    );
+    await _storeSession(url, _decode(resp));
   }
 
   Future<void> logout() async {

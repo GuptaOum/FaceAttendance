@@ -4,12 +4,22 @@ from contextlib import contextmanager
 from . import config
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('admin', 'teacher', 'student')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS students (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    roll_no TEXT NOT NULL UNIQUE,
+    owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    roll_no TEXT NOT NULL,
     name TEXT NOT NULL,
     class_name TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(owner_id, roll_no)
 );
 
 CREATE TABLE IF NOT EXISTS embeddings (
@@ -26,14 +36,6 @@ CREATE TABLE IF NOT EXISTS attendance (
     marked_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     confidence REAL NOT NULL,
     UNIQUE(student_id, date)
-);
-
-CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    role TEXT NOT NULL CHECK (role IN ('admin', 'student')),
-    student_id INTEGER REFERENCES students(id) ON DELETE CASCADE
 );
 """
 

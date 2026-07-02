@@ -25,9 +25,9 @@ class FaceAttendanceApp extends StatelessWidget {
       ),
       home: !api.hasSession
           ? const LoginScreen()
-          : api.role == 'admin'
-              ? const AdminHome()
-              : const StudentHome(),
+          : api.role == 'student'
+              ? const StudentHome()
+              : const AdminHome(),
     );
   }
 }

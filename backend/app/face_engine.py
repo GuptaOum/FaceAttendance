@@ -79,18 +79,27 @@ class FaceEngine:
 
     def reload_index(self):
         with get_db() as conn:
-            rows = conn.execute("SELECT student_id, vector FROM embeddings").fetchall()
+            rows = conn.execute(
+                """SELECT e.student_id, e.vector, s.owner_id
+                   FROM embeddings e JOIN students s ON s.id = e.student_id"""
+            ).fetchall()
         if not rows:
             self._matrix = None
             self._student_ids = []
+            self._owner_ids = np.array([], dtype=np.int64)
             return
         self._student_ids = [r["student_id"] for r in rows]
+        self._owner_ids = np.array([r["owner_id"] for r in rows], dtype=np.int64)
         self._matrix = np.stack([np.frombuffer(r["vector"], dtype=np.float32) for r in rows])
 
-    def match(self, embedding: np.ndarray) -> tuple[int, float] | None:
+    def match(self, embedding: np.ndarray, owner_id: int) -> tuple[int, float] | None:
         if self._matrix is None:
             return None
+        mask = self._owner_ids == owner_id
+        if not mask.any():
+            return None
         sims = self._matrix @ embedding
+        sims[~mask] = -1.0
         best = int(np.argmax(sims))
         score = float(sims[best])
         if score < config.MATCH_THRESHOLD:

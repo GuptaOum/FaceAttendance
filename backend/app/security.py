@@ -29,11 +29,11 @@ def verify_password(password: str, stored: str) -> bool:
     return hmac.compare_digest(digest.hex(), digest_hex)
 
 
-def create_token(username: str, role: str, student_id: int | None) -> str:
+def create_token(user_id: int, username: str, role: str) -> str:
     payload = {
         "sub": username,
+        "uid": user_id,
         "role": role,
-        "student_id": student_id,
         "exp": datetime.now(timezone.utc) + timedelta(minutes=config.JWT_EXPIRE_MINUTES),
     }
     return jwt.encode(payload, config.JWT_SECRET, algorithm=config.JWT_ALGORITHM)
@@ -44,10 +44,10 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         payload = jwt.decode(token, config.JWT_SECRET, algorithms=[config.JWT_ALGORITHM])
     except JWTError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired token")
-    return {"username": payload["sub"], "role": payload["role"], "student_id": payload.get("student_id")}
+    return {"id": payload["uid"], "username": payload["sub"], "role": payload["role"]}
 
 
-def require_admin(user: dict = Depends(get_current_user)) -> dict:
-    if user["role"] != "admin":
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin access required")
+def require_teacher(user: dict = Depends(get_current_user)) -> dict:
+    if user["role"] not in ("teacher", "admin"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Teacher access required")
     return user
