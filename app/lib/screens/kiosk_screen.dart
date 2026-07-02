@@ -44,7 +44,7 @@ class _KioskScreenState extends State<KioskScreen> {
     await _camera!.initialize();
     if (!mounted) return;
     setState(() {});
-    _timer = Timer.periodic(const Duration(milliseconds: 2000), (_) => _tick());
+    _timer = Timer.periodic(const Duration(milliseconds: 1500), (_) => _tick());
   }
 
   Future<void> _tick() async {
