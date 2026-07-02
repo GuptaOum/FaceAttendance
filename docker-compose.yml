@@ -9,6 +9,7 @@ services:
       - DB_PATH=/data/attendance.db
       - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env}
       - MATCH_THRESHOLD=${MATCH_THRESHOLD:-0.45}
+      - TZ=Asia/Kolkata
     volumes:
       - attendance-data:/data
 
