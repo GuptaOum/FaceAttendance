@@ -190,58 +190,120 @@ class _SessionsScreenState extends State<SessionsScreen> {
     }
   }
 
+  Widget _chip(IconData icon, String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: color),
+          const SizedBox(width: 4),
+          Text(label,
+              style: TextStyle(color: color, fontSize: 12.5, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+
   Widget _sessionTile(Map<String, dynamic> s) {
     final isToday = s['date'] == _today;
     final isPast = (s['date'] as String).compareTo(_today) < 0;
     final group = (s['group_name'] as String).isEmpty ? 'All students' : s['group_name'];
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       color: isToday ? Colors.indigo.shade50 : null,
-      child: ListTile(
-        leading: Icon(
-          isToday ? Icons.today : (isPast ? Icons.history : Icons.event),
-          color: isToday ? Colors.indigo : (isPast ? Colors.grey : null),
-        ),
-        title: Text(s['title']),
-        subtitle: Text(
-            '$group · ${s['date']} · ${s['start_time']}–${s['end_time']}\nIN until ${s['entry_until']} · OUT ${s['exit_from']}–${s['exit_until']}'),
-        isThreeLine: true,
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 10, 6, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (isToday)
-              FilledButton.icon(
-                icon: const Icon(Icons.play_arrow, size: 18),
-                label: const Text('Start'),
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => KioskScreen(
-                      sessionId: s['id'],
-                      sessionTitle: s['title'],
-                      group: (s['group_name'] as String).isEmpty ? null : s['group_name'],
-                    ),
+            Row(
+              children: [
+                Icon(
+                  isToday ? Icons.today : (isPast ? Icons.history : Icons.event),
+                  size: 20,
+                  color: isToday ? Colors.indigo : (isPast ? Colors.grey : Colors.black54),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    s['title'],
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.delete_outline, size: 20),
+                  onPressed: () async {
+                    await ApiClient.instance.deleteSession(s['id']);
+                    _load();
+                  },
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(left: 28),
+              child: Text(
+                '${s['date']}  ·  ${s['start_time']}–${s['end_time']}  ·  $group',
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
               ),
-            if (isPast || isToday)
-              IconButton(
-                icon: const Icon(Icons.assessment_outlined),
-                tooltip: 'Session report',
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) =>
-                          ReportScreen(sessionId: s['id'], sessionTitle: s['title'])),
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.only(left: 28),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  _chip(Icons.login, 'IN till ${s['entry_until']}', Colors.green.shade700),
+                  _chip(Icons.logout, 'OUT ${s['exit_from']}–${s['exit_until']}',
+                      Colors.orange.shade800),
+                ],
+              ),
+            ),
+            if (isToday || isPast)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton.icon(
+                      icon: const Icon(Icons.assessment_outlined, size: 18),
+                      label: const Text('Report'),
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) =>
+                                ReportScreen(sessionId: s['id'], sessionTitle: s['title'])),
+                      ),
+                    ),
+                    if (isToday) ...[
+                      const SizedBox(width: 4),
+                      FilledButton.icon(
+                        icon: const Icon(Icons.play_arrow, size: 18),
+                        label: const Text('Start'),
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => KioskScreen(
+                              sessionId: s['id'],
+                              sessionTitle: s['title'],
+                              group: (s['group_name'] as String).isEmpty
+                                  ? null
+                                  : s['group_name'],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
-            IconButton(
-              icon: const Icon(Icons.delete_outline),
-              onPressed: () async {
-                await ApiClient.instance.deleteSession(s['id']);
-                _load();
-              },
-            ),
           ],
         ),
       ),
