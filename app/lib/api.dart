@@ -115,8 +115,12 @@ class ApiClient {
     return _decode(resp) as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> recognize(String imagePath, {String? group}) async {
-    final query = group == null || group.isEmpty ? '' : '?group=${Uri.encodeQueryComponent(group)}';
+  Future<Map<String, dynamic>> recognize(String imagePath, {String? group, int? sessionId}) async {
+    final params = <String>[
+      if (group != null && group.isNotEmpty) 'group=${Uri.encodeQueryComponent(group)}',
+      if (sessionId != null) 'session_id=$sessionId',
+    ];
+    final query = params.isEmpty ? '' : '?${params.join('&')}';
     final req = http.MultipartRequest('POST', Uri.parse('$baseUrl/attendance/recognize$query'));
     req.headers.addAll(_headers);
     req.files.add(await http.MultipartFile.fromPath('image', imagePath));
@@ -129,10 +133,11 @@ class ApiClient {
     return _decode(resp) as List<dynamic>;
   }
 
-  Future<Map<String, dynamic>> attendanceReport({String? day, String? group}) async {
+  Future<Map<String, dynamic>> attendanceReport({String? day, String? group, int? sessionId}) async {
     final params = <String>[
       if (day != null) 'day=$day',
       if (group != null && group.isNotEmpty) 'group=${Uri.encodeQueryComponent(group)}',
+      if (sessionId != null) 'session_id=$sessionId',
     ];
     final query = params.isEmpty ? '' : '?${params.join('&')}';
     final resp = await http.get(Uri.parse('$baseUrl/attendance$query'), headers: _headers);
@@ -155,8 +160,8 @@ class ApiClient {
     return _decode(resp) as List<dynamic>;
   }
 
-  Future<Map<String, dynamic>> createSession(
-      String title, String groupName, String date, String startTime, String endTime) async {
+  Future<Map<String, dynamic>> createSession(String title, String groupName, String date,
+      String startTime, String endTime, String entryUntil, String exitFrom, String exitUntil) async {
     final resp = await http.post(
       Uri.parse('$baseUrl/sessions'),
       headers: {..._headers, 'Content-Type': 'application/json'},
@@ -166,6 +171,9 @@ class ApiClient {
         'date': date,
         'start_time': startTime,
         'end_time': endTime,
+        'entry_until': entryUntil,
+        'exit_from': exitFrom,
+        'exit_until': exitUntil,
       }),
     );
     return _decode(resp) as Map<String, dynamic>;

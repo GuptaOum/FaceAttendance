@@ -12,7 +12,9 @@ const _sound = MethodChannel('face_attendance/sound');
 
 class KioskScreen extends StatefulWidget {
   final String? group;
-  const KioskScreen({super.key, this.group});
+  final int? sessionId;
+  final String? sessionTitle;
+  const KioskScreen({super.key, this.group, this.sessionId, this.sessionTitle});
 
   @override
   State<KioskScreen> createState() => _KioskScreenState();
@@ -54,13 +56,18 @@ class _KioskScreenState extends State<KioskScreen> {
     try {
       final file = await _camera!.takePicture();
       path = file.path;
-      final result = await ApiClient.instance.recognize(path, group: widget.group);
+      final result = await ApiClient.instance
+          .recognize(path, group: widget.group, sessionId: widget.sessionId);
       if (!mounted) return;
 
       if (result['matched'] == true) {
         final student = result['student'];
-        final already = result['already_marked'] == true;
-        if (!already) {
+        final event = result['event'] as String?;
+        final already = result['already_marked'] == true ||
+            event == 'entry_already' ||
+            event == 'exit_already';
+        final failure = event == 'no_entry';
+        if (!already && !failure) {
           try {
             _sound.invokeMethod('playRing');
             Future.delayed(const Duration(seconds: 1), () => _sound.invokeMethod('stopRing'));
@@ -69,11 +76,28 @@ class _KioskScreenState extends State<KioskScreen> {
           }
         }
         setState(() {
-          _icon = already ? Icons.info : Icons.check_circle;
-          _color = already ? Colors.blue : Colors.green;
-          _message = already
-              ? '${student['name']}, already marked today at ${result['marked_at']}'
-              : 'Welcome ${student['name']}!\nAttendance marked ✔';
+          if (failure) {
+            _icon = Icons.error_outline;
+            _color = Colors.red;
+            _message =
+                '${student['name']}, no entry record found.\nYou must scan at the start of class too.';
+          } else if (already) {
+            _icon = Icons.info;
+            _color = Colors.blue;
+            _message = event == 'exit_already'
+                ? '${student['name']}, exit already recorded at ${result['exit_at']}'
+                : '${student['name']}, already marked at ${result['marked_at'] ?? ''}';
+          } else if (event == 'exit_marked') {
+            _icon = Icons.logout;
+            _color = Colors.green;
+            _message = 'Goodbye ${student['name']}!\nExit recorded ✔';
+          } else {
+            _icon = Icons.check_circle;
+            _color = Colors.green;
+            _message = event == 'entry_marked'
+                ? 'Welcome ${student['name']}!\nEntry marked ✔'
+                : 'Welcome ${student['name']}!\nAttendance marked ✔';
+          }
         });
         _paused = true;
         await Future.delayed(const Duration(seconds: 3));
@@ -85,6 +109,19 @@ class _KioskScreenState extends State<KioskScreen> {
             _message = 'Stand in front of the camera';
           });
         }
+      } else if (result['reason'] == 'window_closed') {
+        setState(() {
+          _icon = Icons.schedule;
+          _color = Colors.orange;
+          _message =
+              'Attendance window is closed.\nEntry: ${result['entry_window']}\nExit: ${result['exit_window']}';
+        });
+      } else if (result['reason'] == 'wrong_day') {
+        setState(() {
+          _icon = Icons.event_busy;
+          _color = Colors.orange;
+          _message = 'This session is scheduled for ${result['session_date']}';
+        });
       } else if (result['reason'] == 'no_face') {
         setState(() {
           _icon = Icons.face_retouching_natural;
@@ -177,13 +214,15 @@ class _KioskScreenState extends State<KioskScreen> {
                     onPressed: () => Navigator.pop(context),
                   ),
                 ),
-                if (widget.group != null)
+                if (widget.sessionTitle != null || widget.group != null)
                   Positioned(
                     bottom: 24,
                     left: 0,
                     right: 0,
                     child: Text(
-                      'Session: ${widget.group}',
+                      widget.sessionTitle != null
+                          ? 'Session: ${widget.sessionTitle}'
+                          : 'Group: ${widget.group}',
                       textAlign: TextAlign.center,
                       style: const TextStyle(color: Colors.white70, fontSize: 16),
                     ),

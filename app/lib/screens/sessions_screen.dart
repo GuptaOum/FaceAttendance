@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import 'kiosk_screen.dart';
+import 'report_screen.dart';
 
 class SessionsScreen extends StatefulWidget {
   const SessionsScreen({super.key});
@@ -49,10 +50,17 @@ class _SessionsScreenState extends State<SessionsScreen> {
     DateTime date = DateTime.now();
     TimeOfDay start = const TimeOfDay(hour: 9, minute: 0);
     TimeOfDay end = const TimeOfDay(hour: 10, minute: 0);
+    TimeOfDay? entryUntil;
+    TimeOfDay? exitFrom;
+    TimeOfDay? exitUntil;
 
     String two(int n) => n.toString().padLeft(2, '0');
     String dateStr(DateTime d) => '${d.year}-${two(d.month)}-${two(d.day)}';
     String timeStr(TimeOfDay t) => '${two(t.hour)}:${two(t.minute)}';
+    TimeOfDay shift(TimeOfDay t, int minutes) {
+      final total = (t.hour * 60 + t.minute + minutes).clamp(0, 23 * 60 + 59);
+      return TimeOfDay(hour: total ~/ 60, minute: total % 60);
+    }
 
     final created = await showDialog<bool>(
       context: context,
@@ -118,6 +126,41 @@ class _SessionsScreenState extends State<SessionsScreen> {
                   ),
                 ],
               ),
+              const Divider(),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.login, color: Colors.green),
+                title: Text('Entry allowed until ${timeStr(entryUntil ?? shift(start, 15))}'),
+                subtitle: const Text('Students scan IN before this time'),
+                onTap: () async {
+                  final picked = await showTimePicker(
+                      context: ctx, initialTime: entryUntil ?? shift(start, 15));
+                  if (picked != null) setLocal(() => entryUntil = picked);
+                },
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.logout, color: Colors.orange),
+                title: Text(
+                    'Exit scan ${timeStr(exitFrom ?? shift(end, -10))} to ${timeStr(exitUntil ?? shift(end, 15))}'),
+                subtitle: const Text('Students scan OUT in this window'),
+                onTap: () async {
+                  final from = await showTimePicker(
+                      context: ctx,
+                      initialTime: exitFrom ?? shift(end, -10),
+                      helpText: 'Exit window opens');
+                  if (from == null || !ctx.mounted) return;
+                  final until = await showTimePicker(
+                      context: ctx,
+                      initialTime: exitUntil ?? shift(end, 15),
+                      helpText: 'Exit window closes');
+                  if (until == null) return;
+                  setLocal(() {
+                    exitFrom = from;
+                    exitUntil = until;
+                  });
+                },
+              ),
             ],
           ),
           actions: [
@@ -129,8 +172,16 @@ class _SessionsScreenState extends State<SessionsScreen> {
     );
     if (created != true || title.text.trim().isEmpty) return;
     try {
-      await ApiClient.instance
-          .createSession(title.text.trim(), group, dateStr(date), timeStr(start), timeStr(end));
+      await ApiClient.instance.createSession(
+        title.text.trim(),
+        group,
+        dateStr(date),
+        timeStr(start),
+        timeStr(end),
+        timeStr(entryUntil ?? shift(start, 15)),
+        timeStr(exitFrom ?? shift(end, -10)),
+        timeStr(exitUntil ?? shift(end, 15)),
+      );
       _load();
     } catch (e) {
       if (mounted) {
@@ -152,22 +203,36 @@ class _SessionsScreenState extends State<SessionsScreen> {
           color: isToday ? Colors.indigo : (isPast ? Colors.grey : null),
         ),
         title: Text(s['title']),
-        subtitle: Text('$group · ${s['date']} · ${s['start_time']}–${s['end_time']}'),
+        subtitle: Text(
+            '$group · ${s['date']} · ${s['start_time']}–${s['end_time']}\nIN until ${s['entry_until']} · OUT ${s['exit_from']}–${s['exit_until']}'),
+        isThreeLine: true,
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (!isPast)
+            if (isToday)
               FilledButton.icon(
                 icon: const Icon(Icons.play_arrow, size: 18),
-                label: Text(isToday ? 'Start' : 'Kiosk'),
-                style: FilledButton.styleFrom(
-                    backgroundColor: isToday ? Colors.indigo : Colors.grey),
+                label: const Text('Start'),
                 onPressed: () => Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (_) => KioskScreen(
-                        group: (s['group_name'] as String).isEmpty ? null : s['group_name']),
+                      sessionId: s['id'],
+                      sessionTitle: s['title'],
+                      group: (s['group_name'] as String).isEmpty ? null : s['group_name'],
+                    ),
                   ),
+                ),
+              ),
+            if (isPast || isToday)
+              IconButton(
+                icon: const Icon(Icons.assessment_outlined),
+                tooltip: 'Session report',
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) =>
+                          ReportScreen(sessionId: s['id'], sessionTitle: s['title'])),
                 ),
               ),
             IconButton(

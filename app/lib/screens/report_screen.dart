@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 
 class ReportScreen extends StatefulWidget {
-  const ReportScreen({super.key});
+  final int? sessionId;
+  final String? sessionTitle;
+  const ReportScreen({super.key, this.sessionId, this.sessionTitle});
 
   @override
   State<ReportScreen> createState() => _ReportScreenState();
@@ -48,7 +50,8 @@ class _ReportScreenState extends State<ReportScreen> {
       _error = null;
     });
     try {
-      final report = await ApiClient.instance.attendanceReport(day: _dayStr, group: _group);
+      final report = await ApiClient.instance.attendanceReport(
+          day: _dayStr, group: _group, sessionId: widget.sessionId);
       setState(() => _report = report);
     } catch (e) {
       setState(() => _error = e.toString());
@@ -74,9 +77,12 @@ class _ReportScreenState extends State<ReportScreen> {
     final absent = _filter((_report?['absent'] as List<dynamic>?) ?? []);
     return Scaffold(
       appBar: AppBar(
-        title: Text('Attendance — $_dayStr'),
+        title: Text(widget.sessionId != null
+            ? 'Report — ${widget.sessionTitle}'
+            : 'Attendance — $_dayStr'),
         actions: [
-          IconButton(icon: const Icon(Icons.calendar_month), onPressed: _pickDay),
+          if (widget.sessionId == null)
+            IconButton(icon: const Icon(Icons.calendar_month), onPressed: _pickDay),
           IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
         ],
       ),
@@ -120,9 +126,20 @@ class _ReportScreenState extends State<ReportScreen> {
                           style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
                     ),
                     ...present.map((s) => ListTile(
-                          leading: const Icon(Icons.check_circle, color: Colors.green),
+                          leading: Icon(
+                            widget.sessionId != null && s['exit_at'] == null
+                                ? Icons.warning_amber
+                                : Icons.check_circle,
+                            color: widget.sessionId != null && s['exit_at'] == null
+                                ? Colors.orange
+                                : Colors.green,
+                          ),
                           title: Text('${s['name']} (${s['roll_no']})'),
-                          subtitle: Text('${s['class_name']} · marked at ${s['marked_at']}'),
+                          subtitle: Text(widget.sessionId != null
+                              ? (s['exit_at'] == null
+                                  ? 'IN ${(s['marked_at'] as String).substring(11)} · no exit scan ⚠'
+                                  : 'IN ${(s['marked_at'] as String).substring(11)} → OUT ${(s['exit_at'] as String).substring(11)}')
+                              : '${s['class_name']} · marked at ${s['marked_at']}'),
                           trailing: IconButton(
                             icon: const Icon(Icons.delete_outline),
                             tooltip: 'Remove this attendance',
