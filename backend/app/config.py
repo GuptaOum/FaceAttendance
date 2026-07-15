@@ -23,11 +23,19 @@ MAX_ENROLL_IMAGES = int(os.environ.get("MAX_ENROLL_IMAGES", "10"))
 # but nothing is transmitted. Recognition has false negatives (a present student
 # can be missed in poor light), so a real provider should only be switched on
 # once you trust the absent list. Sending is always teacher-approved per student.
-WHATSAPP_PROVIDER = os.environ.get("WHATSAPP_PROVIDER", "dryrun")  # dryrun | twilio
+WHATSAPP_PROVIDER = os.environ.get("WHATSAPP_PROVIDER", "dryrun")  # dryrun | meta | twilio
 # Sender's WhatsApp number in E.164, e.g. +14155238886 (Twilio sandbox number).
 WHATSAPP_FROM = os.environ.get("WHATSAPP_FROM", "")
 TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
+# Meta WhatsApp Cloud API. Both come from developers.facebook.com > your app >
+# WhatsApp > API Setup. The template must be approved in WhatsApp Manager;
+# "hello_world" (set META_TEMPLATE_HAS_PARAMS=0) works instantly for pilots.
+META_ACCESS_TOKEN = os.environ.get("META_ACCESS_TOKEN", "")
+META_PHONE_NUMBER_ID = os.environ.get("META_PHONE_NUMBER_ID", "")
+META_TEMPLATE_NAME = os.environ.get("META_TEMPLATE_NAME", "")
+META_TEMPLATE_LANG = os.environ.get("META_TEMPLATE_LANG", "en_US")
+META_TEMPLATE_HAS_PARAMS = os.environ.get("META_TEMPLATE_HAS_PARAMS", "1") == "1"
 WHATSAPP_TIMEOUT = float(os.environ.get("WHATSAPP_TIMEOUT", "15"))
 SCHOOL_NAME = os.environ.get("SCHOOL_NAME", "School")
 ABSENCE_TEMPLATE = os.environ.get(

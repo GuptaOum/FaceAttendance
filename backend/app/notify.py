@@ -31,13 +31,18 @@ def render_absence(student: dict, date: str, label: str) -> str:
     )
 
 
+def absence_params(student: dict, date: str, label: str) -> list[str]:
+    """Template variables, in the {{1}}..{{5}} order the approved template uses."""
+    return [student["name"], student["roll_no"], label, date, config.SCHOOL_NAME]
+
+
 class DryRunSender:
     """Transmits nothing. Every message is recorded with status 'dry_run'."""
 
     name = "dryrun"
     sends_for_real = False
 
-    def send(self, to_phone: str, body: str) -> str | None:
+    def send(self, to_phone: str, body: str, params: list[str] | None = None) -> str | None:
         return None
 
 
@@ -58,7 +63,7 @@ class TwilioSender:
         if missing:
             raise SendError(f"Twilio provider selected but not configured: {', '.join(missing)}")
 
-    def send(self, to_phone: str, body: str) -> str:
+    def send(self, to_phone: str, body: str, params: list[str] | None = None) -> str:
         url = f"https://api.twilio.com/2010-04-01/Accounts/{config.TWILIO_ACCOUNT_SID}/Messages.json"
         try:
             resp = requests.post(
@@ -78,7 +83,68 @@ class TwilioSender:
         return resp.json().get("sid", "")
 
 
-_PROVIDERS = {"dryrun": DryRunSender, "twilio": TwilioSender}
+class MetaSender:
+    """WhatsApp via Meta's official Cloud API (graph.facebook.com).
+
+    Free path: the developer "test number" can message up to 5 verified
+    recipients at no cost, which covers a pilot. Business-initiated messages
+    outside a 24h reply window MUST use an approved template, so when
+    META_TEMPLATE_NAME is set we send that template with the absence variables;
+    with no template configured we fall back to plain text, which WhatsApp only
+    delivers inside an open 24h session (i.e. after the parent messaged first).
+    """
+
+    name = "meta"
+    sends_for_real = True
+
+    def __init__(self):
+        missing = [
+            k for k, v in {
+                "META_ACCESS_TOKEN": config.META_ACCESS_TOKEN,
+                "META_PHONE_NUMBER_ID": config.META_PHONE_NUMBER_ID,
+            }.items() if not v
+        ]
+        if missing:
+            raise SendError(f"Meta provider selected but not configured: {', '.join(missing)}")
+
+    def send(self, to_phone: str, body: str, params: list[str] | None = None) -> str:
+        url = f"https://graph.facebook.com/v21.0/{config.META_PHONE_NUMBER_ID}/messages"
+        payload: dict = {"messaging_product": "whatsapp", "to": to_phone}
+        if config.META_TEMPLATE_NAME:
+            template: dict = {
+                "name": config.META_TEMPLATE_NAME,
+                "language": {"code": config.META_TEMPLATE_LANG},
+            }
+            # hello_world (the built-in test template) takes no variables;
+            # a real absence template takes them as {{1}}..{{n}} body params.
+            if params and config.META_TEMPLATE_HAS_PARAMS:
+                template["components"] = [{
+                    "type": "body",
+                    "parameters": [{"type": "text", "text": p} for p in params],
+                }]
+            payload.update({"type": "template", "template": template})
+        else:
+            payload.update({"type": "text", "text": {"body": body}})
+        try:
+            resp = requests.post(
+                url,
+                headers={"Authorization": f"Bearer {config.META_ACCESS_TOKEN}"},
+                json=payload,
+                timeout=config.WHATSAPP_TIMEOUT,
+            )
+        except requests.RequestException as exc:
+            raise SendError(f"Could not reach Meta: {exc}") from exc
+        if resp.status_code >= 300:
+            try:
+                detail = resp.json().get("error", {}).get("message", resp.text[:200])
+            except ValueError:
+                detail = resp.text[:200]
+            raise SendError(f"Meta rejected the message ({resp.status_code}): {detail}")
+        messages = resp.json().get("messages") or [{}]
+        return messages[0].get("id", "")
+
+
+_PROVIDERS = {"dryrun": DryRunSender, "twilio": TwilioSender, "meta": MetaSender}
 
 
 def get_sender():
