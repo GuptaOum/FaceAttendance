@@ -6,4 +6,3 @@ numpy
 onnxruntime
 insightface
 python-jose[cryptography]
-requests

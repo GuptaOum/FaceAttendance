@@ -140,18 +140,6 @@ class _KioskScreenState extends State<KioskScreen> {
           _color = Colors.orange;
           _message = 'Bring your face into the oval';
         });
-      } else if (result['reason'] == 'turned_away') {
-        setState(() {
-          _icon = Icons.face_retouching_natural;
-          _color = Colors.orange;
-          _message = 'Look straight at the camera';
-        });
-      } else if (result['reason'] == 'too_dark') {
-        setState(() {
-          _icon = Icons.brightness_low;
-          _color = Colors.orange;
-          _message = 'Too dark here\nMove to brighter light';
-        });
       } else if (result['reason'] == 'spoof') {
         setState(() {
           _icon = Icons.no_photography;

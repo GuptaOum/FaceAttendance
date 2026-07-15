@@ -18,7 +18,6 @@ CREATE TABLE IF NOT EXISTS students (
     roll_no TEXT NOT NULL,
     name TEXT NOT NULL,
     class_name TEXT NOT NULL DEFAULT '',
-    parent_phone TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(owner_id, roll_no)
 );
@@ -54,45 +53,10 @@ CREATE TABLE IF NOT EXISTS attendance (
     confidence REAL NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS notifications (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
-    session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
-    date TEXT NOT NULL,
-    channel TEXT NOT NULL DEFAULT 'whatsapp',
-    to_phone TEXT NOT NULL,
-    body TEXT NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('dry_run', 'sent', 'failed')),
-    provider TEXT NOT NULL DEFAULT '',
-    provider_ref TEXT,
-    error TEXT,
-    sent_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
-);
-
-CREATE TABLE IF NOT EXISTS face_requests (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
-    request_type TEXT NOT NULL CHECK (request_type IN ('reenroll', 'issue')),
-    message TEXT NOT NULL DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved', 'rejected')),
-    teacher_notes TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
-    resolved_at TEXT
-);
-
 CREATE UNIQUE INDEX IF NOT EXISTS ux_att_daily
     ON attendance(student_id, date) WHERE session_id IS NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS ux_att_session
     ON attendance(student_id, session_id) WHERE session_id IS NOT NULL;
--- One open request per student at a time; stops a frustrated student from
--- flooding their teacher's queue after a few failed scans.
-CREATE UNIQUE INDEX IF NOT EXISTS ux_face_req_open
-    ON face_requests(student_id) WHERE status = 'open';
--- A parent is told about a given day at most once. Dry runs are exempt so the
--- flow stays re-runnable while testing.
-CREATE UNIQUE INDEX IF NOT EXISTS ux_notif_sent_once
-    ON notifications(student_id, date) WHERE status = 'sent';
 """
 
 
@@ -119,9 +83,6 @@ def _migrate(conn):
         conn.execute("ALTER TABLE sessions ADD COLUMN entry_until TEXT NOT NULL DEFAULT ''")
         conn.execute("ALTER TABLE sessions ADD COLUMN exit_from TEXT NOT NULL DEFAULT ''")
         conn.execute("ALTER TABLE sessions ADD COLUMN exit_until TEXT NOT NULL DEFAULT ''")
-    stu_cols = {r["name"] for r in conn.execute("PRAGMA table_info(students)")}
-    if stu_cols and "parent_phone" not in stu_cols:
-        conn.execute("ALTER TABLE students ADD COLUMN parent_phone TEXT NOT NULL DEFAULT ''")
 
 
 @contextmanager
