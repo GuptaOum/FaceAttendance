@@ -223,8 +223,8 @@ class ApiClient {
       headers: {..._headers, 'Content-Type': 'application/json'},
       body: jsonEncode({
         'student_ids': studentIds,
-        if (date != null) 'date': date,
-        if (sessionId != null) 'session_id': sessionId,
+        'date': ?date,
+        'session_id': ?sessionId,
       }),
     );
     return _decode(resp) as Map<String, dynamic>;
