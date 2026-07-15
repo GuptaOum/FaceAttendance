@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from ..db import get_db
-from ..notify import PHONE_RE, SendError, get_sender, render_absence
+from ..notify import PHONE_RE, SendError, absence_params, get_sender, render_absence
 from ..security import require_teacher
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -128,7 +128,7 @@ def send_absent(body: NotifyAbsentIn, user: dict = Depends(require_teacher)):
 
         message = render_absence(student, target, label)
         try:
-            ref = sender.send(phone, message)
+            ref = sender.send(phone, message, params=absence_params(student, target, label))
             row_status, error = ("sent" if sender.sends_for_real else "dry_run"), None
         except SendError as exc:
             ref, row_status, error = None, "failed", str(exc)
