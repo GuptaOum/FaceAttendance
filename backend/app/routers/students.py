@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from .. import config
 from ..db import get_db
 from ..face_engine import EnrollmentError
+from ..notify import PHONE_RE
 from ..security import require_teacher
 
 router = APIRouter(prefix="/students", tags=["students"])
@@ -19,6 +20,22 @@ class StudentIn(BaseModel):
     roll_no: str
     name: str
     class_name: str = ""
+    parent_phone: str = ""
+
+
+class StudentUpdate(BaseModel):
+    parent_phone: str
+
+
+def _clean_phone(raw: str) -> str:
+    """Empty means 'no parent contact', which is allowed. Anything else must be E.164."""
+    phone = raw.strip().replace(" ", "")
+    if phone and not PHONE_RE.match(phone):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Parent phone must be in international format, e.g. +919876543210",
+        )
+    return phone
 
 
 def _owned_student(conn, student_id: int, user: dict):
@@ -33,6 +50,7 @@ def create_student(body: StudentIn, user: dict = Depends(require_teacher)):
     roll_no = body.roll_no.strip()
     name = body.name.strip()
     class_name = body.class_name.strip()
+    parent_phone = _clean_phone(body.parent_phone)
     if not ROLL_RE.match(roll_no):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Roll number must be digits only")
     if not NAME_RE.match(name):
@@ -46,11 +64,24 @@ def create_student(body: StudentIn, user: dict = Depends(require_teacher)):
         if existing:
             raise HTTPException(status.HTTP_409_CONFLICT, "You already have a student with this roll number")
         cur = conn.execute(
-            "INSERT INTO students (owner_id, roll_no, name, class_name) VALUES (?, ?, ?, ?)",
-            (user["id"], roll_no, name, class_name),
+            """INSERT INTO students (owner_id, roll_no, name, class_name, parent_phone)
+               VALUES (?, ?, ?, ?, ?)""",
+            (user["id"], roll_no, name, class_name, parent_phone),
         )
         student_id = cur.lastrowid
-    return {"id": student_id, "roll_no": roll_no, "name": name, "class_name": class_name}
+    return {"id": student_id, "roll_no": roll_no, "name": name,
+            "class_name": class_name, "parent_phone": parent_phone}
+
+
+@router.patch("/{student_id}")
+def update_student(student_id: int, body: StudentUpdate, user: dict = Depends(require_teacher)):
+    parent_phone = _clean_phone(body.parent_phone)
+    with get_db() as conn:
+        _owned_student(conn, student_id, user)
+        conn.execute(
+            "UPDATE students SET parent_phone = ? WHERE id = ?", (parent_phone, student_id)
+        )
+    return {"id": student_id, "parent_phone": parent_phone}
 
 
 @router.get("/groups")

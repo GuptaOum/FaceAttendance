@@ -10,6 +10,13 @@ services:
       - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env}
       - MATCH_THRESHOLD=${MATCH_THRESHOLD:-0.45}
       - TZ=Asia/Kolkata
+      # Parent absence notifications. 'dryrun' renders and logs messages but sends
+      # nothing. Do not switch to a real provider until the absent list is trusted.
+      - WHATSAPP_PROVIDER=${WHATSAPP_PROVIDER:-dryrun}
+      - WHATSAPP_FROM=${WHATSAPP_FROM:-}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID:-}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN:-}
+      - SCHOOL_NAME=${SCHOOL_NAME:-School}
     volumes:
       - attendance-data:/data
 
