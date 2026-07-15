@@ -3,3 +3,7 @@ backend/attendance.db
 __pycache__/
 *.pyc
 .env
+# Database backups hold real student names, password hashes and face
+# embeddings. They must never reach the remote.
+backups/
+*.db.bak*

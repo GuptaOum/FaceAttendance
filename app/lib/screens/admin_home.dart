@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../api.dart';
 import 'enroll_screen.dart';
+import 'face_requests_screen.dart';
 import 'kiosk_screen.dart';
 import 'login_screen.dart';
 import 'report_screen.dart';
@@ -55,31 +56,45 @@ class _AdminHomeState extends State<AdminHome> {
     final rollNo = TextEditingController();
     final name = TextEditingController();
     final className = TextEditingController();
+    final parentPhone = TextEditingController();
     final created = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Add Student'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: rollNo,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(labelText: 'Roll No', hintText: 'Numbers only'),
-            ),
-            TextField(
-              controller: name,
-              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z .]'))],
-              decoration: const InputDecoration(labelText: 'Name', hintText: 'English letters only'),
-            ),
-            TextField(
-              controller: className,
-              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9 -]'))],
-              decoration: const InputDecoration(
-                  labelText: 'Group / Class', hintText: 'e.g. Class A'),
-            ),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: rollNo,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: const InputDecoration(labelText: 'Roll No', hintText: 'Numbers only'),
+              ),
+              TextField(
+                controller: name,
+                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z .]'))],
+                decoration:
+                    const InputDecoration(labelText: 'Name', hintText: 'English letters only'),
+              ),
+              TextField(
+                controller: className,
+                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9 -]'))],
+                decoration: const InputDecoration(
+                    labelText: 'Group / Class', hintText: 'e.g. Class A'),
+              ),
+              TextField(
+                controller: parentPhone,
+                keyboardType: TextInputType.phone,
+                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9+]'))],
+                decoration: const InputDecoration(
+                  labelText: 'Parent phone (optional)',
+                  hintText: '+919876543210',
+                  helperText: 'Country code required',
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
@@ -89,7 +104,46 @@ class _AdminHomeState extends State<AdminHome> {
     );
     if (created != true || rollNo.text.trim().isEmpty || name.text.trim().isEmpty) return;
     try {
-      await ApiClient.instance.createStudent(rollNo.text.trim(), name.text.trim(), className.text.trim());
+      await ApiClient.instance.createStudent(
+        rollNo.text.trim(),
+        name.text.trim(),
+        className.text.trim(),
+        parentPhone: parentPhone.text.trim(),
+      );
+      await _refresh();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    }
+  }
+
+  Future<void> _editPhoneDialog(Map<String, dynamic> s) async {
+    final phone = TextEditingController(text: s['parent_phone'] ?? '');
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Parent phone for ${s['name']}'),
+        content: TextField(
+          controller: phone,
+          keyboardType: TextInputType.phone,
+          autofocus: true,
+          inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9+]'))],
+          decoration: const InputDecoration(
+            labelText: 'Parent phone',
+            hintText: '+919876543210',
+            helperText: 'Country code required. Leave empty to remove.',
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+        ],
+      ),
+    );
+    if (saved != true) return;
+    try {
+      await ApiClient.instance.updateParentPhone(s['id'], phone.text.trim());
       await _refresh();
     } catch (e) {
       if (mounted) {
@@ -150,6 +204,15 @@ class _AdminHomeState extends State<AdminHome> {
         title: const Text('Face Attendance'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.face_retouching_natural),
+            tooltip: 'Face requests',
+            onPressed: () async {
+              await Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const FaceRequestsScreen()));
+              _refresh();
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.event_note),
             tooltip: 'Sessions',
             onPressed: () =>
@@ -190,6 +253,7 @@ class _AdminHomeState extends State<AdminHome> {
                           itemBuilder: (_, i) {
                             final s = _filtered[i];
                       final enrolled = (s['enrolled_images'] as int) > 0;
+                      final phone = (s['parent_phone'] ?? '') as String;
                       return ListTile(
                         leading: CircleAvatar(
                           backgroundColor: enrolled ? Colors.green.shade100 : Colors.orange.shade100,
@@ -197,12 +261,22 @@ class _AdminHomeState extends State<AdminHome> {
                               color: enrolled ? Colors.green : Colors.orange),
                         ),
                         title: Text('${s['name']} (${s['roll_no']})'),
-                        subtitle: Text(enrolled
-                            ? '${s['class_name']} · ${s['enrolled_images']} face images enrolled'
-                            : '${s['class_name']} · Not enrolled yet'),
+                        subtitle: Text([
+                          s['class_name'],
+                          enrolled ? '${s['enrolled_images']} face images' : 'Not enrolled yet',
+                          phone.isEmpty ? 'No parent phone' : phone,
+                        ].where((p) => (p as String).isNotEmpty).join(' · ')),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            IconButton(
+                              icon: Icon(
+                                phone.isEmpty ? Icons.phone_disabled_outlined : Icons.phone_outlined,
+                                color: phone.isEmpty ? Colors.grey : Colors.green,
+                              ),
+                              tooltip: phone.isEmpty ? 'Add parent phone' : 'Edit parent phone',
+                              onPressed: () => _editPhoneDialog(s as Map<String, dynamic>),
+                            ),
                             IconButton(
                               icon: const Icon(Icons.camera_alt_outlined),
                               tooltip: 'Enroll face',

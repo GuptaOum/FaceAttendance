@@ -8,8 +8,30 @@ services:
     environment:
       - DB_PATH=/data/attendance.db
       - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env}
-      - MATCH_THRESHOLD=${MATCH_THRESHOLD:-0.45}
       - TZ=Asia/Kolkata
+      # Recognition. Defaults below match the code defaults, so leaving .env empty
+      # changes nothing; override any of them in .env then `docker compose up -d backend`
+      # (no rebuild needed).
+      - MATCH_THRESHOLD=${MATCH_THRESHOLD:-0.45}
+      # Quality gating. Loosen these first if real students get blocked:
+      # thresholds were calibrated on a small sample, not this classroom's lighting.
+      - MIN_FACE_BRIGHTNESS=${MIN_FACE_BRIGHTNESS:-60}
+      - MAX_FACE_BRIGHTNESS=${MAX_FACE_BRIGHTNESS:-200}
+      - MAX_BRIGHTNESS_IMBALANCE=${MAX_BRIGHTNESS_IMBALANCE:-0.25}
+      - MAX_ENROLL_YAW=${MAX_ENROLL_YAW:-45}
+      - MAX_KIOSK_YAW=${MAX_KIOSK_YAW:-35}
+      # Liveness. ANTISPOOF_ON_ENROLL=0 is the kill switch if enrollment starts
+      # rejecting real faces; the kiosk check stays on independently.
+      - ANTISPOOF_ENABLED=${ANTISPOOF_ENABLED:-1}
+      - ANTISPOOF_ON_ENROLL=${ANTISPOOF_ON_ENROLL:-1}
+      - ANTISPOOF_THRESHOLD=${ANTISPOOF_THRESHOLD:-0.5}
+      # Parent notifications. 'dryrun' renders and logs messages but sends nothing.
+      # Do not switch to a real provider until the absent list is trustworthy.
+      - WHATSAPP_PROVIDER=${WHATSAPP_PROVIDER:-dryrun}
+      - WHATSAPP_FROM=${WHATSAPP_FROM:-}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID:-}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN:-}
+      - SCHOOL_NAME=${SCHOOL_NAME:-School}
     volumes:
       - attendance-data:/data
 

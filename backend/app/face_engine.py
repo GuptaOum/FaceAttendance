@@ -34,6 +34,30 @@ class FaceEngine:
         with self._lock:
             return self._analyzer.get(img)
 
+    def _crop_gray(self, img: np.ndarray, bbox: np.ndarray) -> np.ndarray | None:
+        x1, y1, x2, y2 = bbox.astype(int)
+        crop = img[max(y1, 0):y2, max(x1, 0):x2]
+        if crop.size == 0:
+            return None
+        return cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+
+    def _yaw(self, face) -> float | None:
+        # buffalo_l loads landmark_3d_68, which populates pose as [pitch, yaw, roll]
+        # in degrees. Face.__getattr__ yields None if the pose model ever goes missing.
+        if face.pose is None:
+            return None
+        return abs(float(face.pose[1]))
+
+    def _illumination(self, gray: np.ndarray) -> tuple[float, float]:
+        """Mean brightness (0-255) and left/right imbalance (0-1) of a face crop."""
+        mean = float(gray.mean())
+        half = gray.shape[1] // 2
+        if half == 0:
+            return mean, 0.0
+        left = float(gray[:, :half].mean())
+        right = float(gray[:, half:].mean())
+        return mean, abs(left - right) / max(left, right, 1.0)
+
     def embed_for_enrollment(self, image_bytes: bytes) -> np.ndarray:
         img = self._decode(image_bytes)
         faces = self._detect(img)
@@ -47,11 +71,28 @@ class FaceEngine:
         x1, y1, x2, y2 = face.bbox.astype(int)
         if min(x2 - x1, y2 - y1) < config.MIN_FACE_SIZE:
             raise EnrollmentError("Face too small, move closer to the camera")
-        crop = img[max(y1, 0):y2, max(x1, 0):x2]
-        if crop.size > 0:
-            blur = cv2.Laplacian(cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY), cv2.CV_64F).var()
+        gray = self._crop_gray(img, face.bbox)
+        if gray is not None:
+            # Brightness is checked before blur: a dark frame has low contrast and so
+            # also fails the Laplacian test, and "too dark" is the actionable message.
+            brightness, imbalance = self._illumination(gray)
+            if brightness < config.MIN_FACE_BRIGHTNESS:
+                raise EnrollmentError("Too dark, move to brighter light")
+            if brightness > config.MAX_FACE_BRIGHTNESS:
+                raise EnrollmentError("Overexposed, move away from direct light")
+            if imbalance > config.MAX_BRIGHTNESS_IMBALANCE:
+                raise EnrollmentError("Uneven lighting, avoid strong side light or backlight")
+            blur = cv2.Laplacian(gray, cv2.CV_64F).var()
             if blur < config.MIN_BLUR_VAR:
                 raise EnrollmentError("Image too blurry, hold the camera steady")
+        yaw = self._yaw(face)
+        if yaw is not None and yaw > config.MAX_ENROLL_YAW:
+            raise EnrollmentError("Head turned too far, face the camera more directly")
+        # A spoofed enrollment poisons the student's identity permanently, so gate it
+        # here as well as at the kiosk.
+        if (self._antispoof is not None and config.ANTISPOOF_ON_ENROLL
+                and not self._antispoof.is_live(img, face.bbox)):
+            raise EnrollmentError("Live face not detected, enroll the real person, not a photo or screen")
         return face.normed_embedding.astype(np.float32)
 
     def embed_kiosk_face(self, image_bytes: bytes) -> tuple[np.ndarray | None, str | None]:
@@ -77,6 +118,17 @@ class FaceEngine:
         if (abs(cx - img_w / 2) > img_w * config.KIOSK_CENTER_TOLERANCE
                 or abs(cy - img_h / 2) > img_h * config.KIOSK_CENTER_TOLERANCE):
             return None, "not_centered"
+        # A turned-away or badly lit face yields a degraded embedding, which risks a
+        # false match against the wrong student. Both checks are far cheaper than the
+        # antispoof model below, so they run first.
+        yaw = self._yaw(face)
+        if yaw is not None and yaw > config.MAX_KIOSK_YAW:
+            return None, "turned_away"
+        gray = self._crop_gray(img, face.bbox)
+        if gray is not None:
+            brightness, _ = self._illumination(gray)
+            if brightness < config.MIN_FACE_BRIGHTNESS:
+                return None, "too_dark"
         if self._antispoof is not None and not self._antispoof.is_live(img, face.bbox):
             return None, "spoof"
         return face.normed_embedding.astype(np.float32), None
