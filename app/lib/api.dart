@@ -91,11 +91,26 @@ class ApiClient {
     return _decode(resp) as List<dynamic>;
   }
 
-  Future<Map<String, dynamic>> createStudent(String rollNo, String name, String className) async {
+  Future<Map<String, dynamic>> createStudent(String rollNo, String name, String className,
+      {String parentPhone = ''}) async {
     final resp = await http.post(
       Uri.parse('$baseUrl/students'),
       headers: {..._headers, 'Content-Type': 'application/json'},
-      body: jsonEncode({'roll_no': rollNo, 'name': name, 'class_name': className}),
+      body: jsonEncode({
+        'roll_no': rollNo,
+        'name': name,
+        'class_name': className,
+        'parent_phone': parentPhone,
+      }),
+    );
+    return _decode(resp) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> updateParentPhone(int studentId, String parentPhone) async {
+    final resp = await http.patch(
+      Uri.parse('$baseUrl/students/$studentId'),
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode({'parent_phone': parentPhone}),
     );
     return _decode(resp) as Map<String, dynamic>;
   }
@@ -182,5 +197,42 @@ class ApiClient {
   Future<void> deleteSession(int sessionId) async {
     final resp = await http.delete(Uri.parse('$baseUrl/sessions/$sessionId'), headers: _headers);
     _decode(resp);
+  }
+
+  // --- Parent absence notifications ----------------------------------------
+
+  /// Who would be messaged for [date]/[sessionId], with per-student
+  /// notifiability and the exact message preview. Sends nothing.
+  Future<Map<String, dynamic>> absentPreview({String? date, int? sessionId}) async {
+    final params = <String>[
+      if (date != null) 'date=$date',
+      if (sessionId != null) 'session_id=$sessionId',
+    ];
+    final query = params.isEmpty ? '' : '?${params.join('&')}';
+    final resp =
+        await http.get(Uri.parse('$baseUrl/notifications/absent$query'), headers: _headers);
+    return _decode(resp) as Map<String, dynamic>;
+  }
+
+  /// Send absence alerts to the parents of exactly [studentIds]. The teacher
+  /// chooses the list; there is no implicit send-to-everyone on the server.
+  Future<Map<String, dynamic>> sendAbsenceAlerts(List<int> studentIds,
+      {String? date, int? sessionId}) async {
+    final resp = await http.post(
+      Uri.parse('$baseUrl/notifications/absent/send'),
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'student_ids': studentIds,
+        if (date != null) 'date': date,
+        if (sessionId != null) 'session_id': sessionId,
+      }),
+    );
+    return _decode(resp) as Map<String, dynamic>;
+  }
+
+  Future<List<dynamic>> notificationLog({String? date}) async {
+    final query = date == null ? '' : '?date=$date';
+    final resp = await http.get(Uri.parse('$baseUrl/notifications$query'), headers: _headers);
+    return _decode(resp) as List<dynamic>;
   }
 }

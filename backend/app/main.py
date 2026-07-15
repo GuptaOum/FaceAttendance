@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .db import get_db, init_db
 from .face_engine import FaceEngine
-from .routers import attendance, auth, sessions, students
+from .routers import attendance, auth, notifications, sessions, students
 from .security import hash_password
 
 
@@ -40,6 +40,7 @@ app.include_router(auth.router)
 app.include_router(students.router)
 app.include_router(attendance.router)
 app.include_router(sessions.router)
+app.include_router(notifications.router)
 
 
 @app.get("/health")
