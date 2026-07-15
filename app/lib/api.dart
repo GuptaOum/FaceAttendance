@@ -91,11 +91,26 @@ class ApiClient {
     return _decode(resp) as List<dynamic>;
   }
 
-  Future<Map<String, dynamic>> createStudent(String rollNo, String name, String className) async {
+  Future<Map<String, dynamic>> createStudent(String rollNo, String name, String className,
+      {String parentPhone = ''}) async {
     final resp = await http.post(
       Uri.parse('$baseUrl/students'),
       headers: {..._headers, 'Content-Type': 'application/json'},
-      body: jsonEncode({'roll_no': rollNo, 'name': name, 'class_name': className}),
+      body: jsonEncode({
+        'roll_no': rollNo,
+        'name': name,
+        'class_name': className,
+        'parent_phone': parentPhone,
+      }),
+    );
+    return _decode(resp) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> updateParentPhone(int studentId, String parentPhone) async {
+    final resp = await http.patch(
+      Uri.parse('$baseUrl/students/$studentId'),
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode({'parent_phone': parentPhone}),
     );
     return _decode(resp) as Map<String, dynamic>;
   }
@@ -182,5 +197,42 @@ class ApiClient {
   Future<void> deleteSession(int sessionId) async {
     final resp = await http.delete(Uri.parse('$baseUrl/sessions/$sessionId'), headers: _headers);
     _decode(resp);
+  }
+
+  // --- Face requests -------------------------------------------------------
+
+  /// Student asks their teacher to re-enroll their face, or reports a
+  /// recognition problem. [type] is 'reenroll' or 'issue'.
+  Future<Map<String, dynamic>> createFaceRequest(String type, String message) async {
+    final resp = await http.post(
+      Uri.parse('$baseUrl/face-requests'),
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode({'request_type': type, 'message': message}),
+    );
+    return _decode(resp) as Map<String, dynamic>;
+  }
+
+  Future<List<dynamic>> myFaceRequests() async {
+    final resp = await http.get(Uri.parse('$baseUrl/face-requests/me'), headers: _headers);
+    return _decode(resp) as List<dynamic>;
+  }
+
+  /// Teacher view. [statusFilter] is 'open', 'resolved', 'rejected' or 'all'.
+  Future<List<dynamic>> listFaceRequests({String statusFilter = 'open'}) async {
+    final resp = await http.get(
+      Uri.parse('$baseUrl/face-requests?status_filter=$statusFilter'),
+      headers: _headers,
+    );
+    return _decode(resp) as List<dynamic>;
+  }
+
+  /// [status] is 'resolved' or 'rejected'.
+  Future<Map<String, dynamic>> resolveFaceRequest(int id, String status, String notes) async {
+    final resp = await http.patch(
+      Uri.parse('$baseUrl/face-requests/$id'),
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode({'status': status, 'teacher_notes': notes}),
+    );
+    return _decode(resp) as Map<String, dynamic>;
   }
 }
