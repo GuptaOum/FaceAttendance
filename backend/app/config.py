@@ -52,3 +52,7 @@ ABSENCE_TEMPLATE = os.environ.get(
 # How early a student may scan in before a block officially starts. Students
 # arrive early; rejecting them leaves no way to record attendance at all.
 EARLY_ENTRY_MINUTES = int(os.environ.get("EARLY_ENTRY_MINUTES", "20"))
+
+# How long a student must have been in the block before a second scan is read
+# as them leaving early rather than a double tap at the kiosk.
+MIN_DWELL_MINUTES = float(os.environ.get("MIN_DWELL_MINUTES", "10"))

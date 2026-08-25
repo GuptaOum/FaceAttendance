@@ -52,6 +52,23 @@ def _session_phase(sess) -> str | None:
     return None
 
 
+def _minutes_between(marked_at: str, now: datetime) -> float:
+    """Minutes since the entry scan. Guards against a double-tap at the kiosk
+    being read as the student leaving two seconds after arriving."""
+    text = (marked_at or "").strip()
+    if " " in text:
+        text = text.split(" ", 1)[1]
+    try:
+        t = datetime.strptime(text[:8], "%H:%M:%S")
+    except ValueError:
+        try:
+            t = datetime.strptime(text[:5], "%H:%M")
+        except ValueError:
+            return 0.0
+    entered = t.hour * 60 + t.minute + t.second / 60
+    current = now.hour * 60 + now.minute + now.second / 60
+    return current - entered
+
 def _group_ids(conn, owner_id: int, group: str) -> set[int]:
     rows = conn.execute(
         "SELECT id FROM students WHERE owner_id = ? AND class_name = ?", (owner_id, group)
@@ -131,6 +148,28 @@ async def recognize(
 
         if phase in ("entry", "late_entry"):
             if row is not None:
+                # Already scanned in. A second scan well into the block is
+                # someone leaving early - feeling ill, called away - not a
+                # duplicate entry. Recording it as an early exit is what lets
+                # them keep the periods they actually sat through; refusing it
+                # would cost them the whole block.
+                minutes_in = _minutes_between(row["marked_at"], datetime.now())
+                if row["exit_at"] is None and minutes_in >= config.MIN_DWELL_MINUTES:
+                    conn.execute(
+                        "UPDATE attendance SET exit_at = datetime('now', 'localtime') WHERE id = ?",
+                        (row["id"],),
+                    )
+                    periods = conn.execute(
+                        "SELECT * FROM periods WHERE session_id = ? ORDER BY seq", (session_id,)
+                    ).fetchall()
+                    exit_ts = datetime.now().strftime("%H:%M")
+                    return {
+                        "matched": True, "student": student_out, "phase": "early_exit",
+                        "event": "early_exit_marked", "confidence": round(confidence, 3),
+                        "period_summary": summarise(
+                            periods, row["marked_at"], exit_ts, sess["end_time"]
+                        ) if periods else None,
+                    }
                 return {
                     "matched": True, "student": student_out, "phase": phase,
                     "event": "entry_already", "marked_at": row["marked_at"],

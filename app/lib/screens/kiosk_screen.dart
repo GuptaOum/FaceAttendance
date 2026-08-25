@@ -87,10 +87,22 @@ class _KioskScreenState extends State<KioskScreen> {
             _message = event == 'exit_already'
                 ? '${student['name']}, exit already recorded at ${result['exit_at']}'
                 : '${student['name']}, already marked at ${result['marked_at'] ?? ''}';
+          } else if (event == 'early_exit_marked') {
+            // Leaving mid-block (feeling unwell, called away). They keep the
+            // periods they actually sat through instead of losing the block.
+            final summary = result['period_summary'];
+            _icon = Icons.logout;
+            _color = Colors.orange;
+            _message = summary != null
+                ? 'Take care ${student['name']}!\nLeaving recorded ✔\n${summary['label']} counted'
+                : 'Take care ${student['name']}!\nLeaving recorded ✔';
           } else if (event == 'exit_marked') {
+            final summary = result['period_summary'];
             _icon = Icons.logout;
             _color = Colors.green;
-            _message = 'Goodbye ${student['name']}!\nExit recorded ✔';
+            _message = summary != null
+                ? 'Goodbye ${student['name']}!\nExit recorded ✔\n${summary['label']} counted'
+                : 'Goodbye ${student['name']}!\nExit recorded ✔';
           } else {
             _icon = Icons.check_circle;
             _color = Colors.green;
