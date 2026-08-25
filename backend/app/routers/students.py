@@ -50,7 +50,7 @@ def _create_student_login(conn, roll_no: str, owner_username: str) -> tuple[str,
         taken = conn.execute("SELECT id FROM users WHERE username = ?", (candidate,)).fetchone()
         if taken is None:
             cur = conn.execute(
-                "INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'student')",
+                "INSERT INTO users (username, password_hash, role, must_change_password) VALUES (?, ?, 'student', 1)",
                 (candidate, hash_password(roll_no)),
             )
             return candidate, cur.lastrowid

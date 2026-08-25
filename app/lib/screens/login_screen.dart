@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import 'admin_home.dart';
+import 'change_password_screen.dart';
 import 'student_home.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -39,8 +40,13 @@ class _LoginScreenState extends State<LoginScreen> {
         await api.login(server, _username.text.trim(), _password.text);
       }
       if (!mounted) return;
-      final home = api.role == 'student' ? const StudentHome() : const AdminHome();
-      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => home));
+      final Widget home = api.role == 'student' ? const StudentHome() : const AdminHome();
+      // An account still on its issued password cannot reach the app until it
+      // sets a real one.
+      final Widget target = api.mustChangePassword
+          ? ChangePasswordScreen(next: home)
+          : home;
+      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => target));
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {

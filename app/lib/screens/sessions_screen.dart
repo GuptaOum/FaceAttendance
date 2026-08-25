@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import 'timetable_screen.dart';
 import 'kiosk_screen.dart';
 import 'report_screen.dart';
 
@@ -321,7 +322,18 @@ class _SessionsScreenState extends State<SessionsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Attendance Sessions'),
-        actions: [IconButton(icon: const Icon(Icons.refresh), onPressed: _load)],
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.calendar_month),
+            tooltip: 'Weekly timetable',
+            onPressed: () async {
+              await Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const TimetableScreen()));
+              _load();
+            },
+          ),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
+        ],
       ),
       body: _error != null
           ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))

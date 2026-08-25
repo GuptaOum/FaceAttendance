@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
     username TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('admin', 'teacher', 'student')),
+    must_change_password INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -45,6 +46,19 @@ CREATE TABLE IF NOT EXISTS sessions (
     exit_from TEXT NOT NULL DEFAULT '',
     exit_until TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Periods inside a block (session). Students scan once at block entry and once
+-- at block exit; per-period presence is derived from that interval, so there is
+-- no scanning between back-to-back classes.
+CREATE TABLE IF NOT EXISTS periods (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    seq INTEGER NOT NULL,
+    subject TEXT NOT NULL,
+    start_time TEXT NOT NULL,
+    end_time TEXT NOT NULL,
+    UNIQUE(session_id, seq)
 );
 
 CREATE TABLE IF NOT EXISTS attendance (
@@ -85,6 +99,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_notif_sent_once
 
 
 def _migrate(conn):
+    user_cols = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
+    if user_cols and "must_change_password" not in user_cols:
+        conn.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0")
     att_cols = {r["name"] for r in conn.execute("PRAGMA table_info(attendance)")}
     if att_cols and "exit_at" not in att_cols:
         conn.executescript("""

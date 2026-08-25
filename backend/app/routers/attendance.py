@@ -3,6 +3,7 @@ from datetime import date, datetime
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 
 from ..db import get_db
+from ..periods import summarise
 from ..security import get_current_user, require_teacher
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
@@ -22,11 +23,20 @@ def delete_attendance(attendance_id: int, user: dict = Depends(require_teacher))
 
 
 def _session_phase(sess) -> str | None:
+    """Which scan the kiosk should record right now.
+
+    'entry'      - on time, inside the entry buffer
+    'late_entry' - block already running; still admitted, but the periods that
+                   finished before they walked in are not credited
+    'exit'       - inside the exit buffer
+    """
     now = datetime.now().strftime("%H:%M")
     if sess["start_time"] <= now <= sess["entry_until"]:
         return "entry"
     if sess["exit_from"] <= now <= sess["exit_until"]:
         return "exit"
+    if sess["entry_until"] < now < sess["exit_from"]:
+        return "late_entry"
     return None
 
 
@@ -107,20 +117,30 @@ async def recognize(
             (student_id, session_id),
         ).fetchone()
 
-        if phase == "entry":
+        if phase in ("entry", "late_entry"):
             if row is not None:
                 return {
-                    "matched": True, "student": student_out, "phase": "entry",
+                    "matched": True, "student": student_out, "phase": phase,
                     "event": "entry_already", "marked_at": row["marked_at"],
                 }
             conn.execute(
                 "INSERT INTO attendance (student_id, session_id, date, confidence) VALUES (?, ?, ?, ?)",
                 (student_id, session_id, today, confidence),
             )
-            return {
-                "matched": True, "student": student_out, "phase": "entry",
-                "event": "entry_marked", "confidence": round(confidence, 3),
+            # Tell a late arrival exactly which periods they have forfeited,
+            # rather than silently crediting or silently dropping the block.
+            periods = conn.execute(
+                "SELECT * FROM periods WHERE session_id = ? ORDER BY seq", (session_id,)
+            ).fetchall()
+            out = {
+                "matched": True, "student": student_out, "phase": phase,
+                "event": "late_entry_marked" if phase == "late_entry" else "entry_marked",
+                "confidence": round(confidence, 3),
             }
+            if periods:
+                now_ts = datetime.now().strftime("%H:%M")
+                out["period_summary"] = summarise(periods, now_ts, None, sess["end_time"])
+            return out
 
         if row is None:
             return {
@@ -135,9 +155,17 @@ async def recognize(
             "UPDATE attendance SET exit_at = datetime('now', 'localtime') WHERE id = ?",
             (row["id"],),
         )
+        # The exit scan is what converts the block into counted attendance, so
+        # report the final per-period result back to the kiosk.
+        periods = conn.execute(
+            "SELECT * FROM periods WHERE session_id = ? ORDER BY seq", (session_id,)
+        ).fetchall()
+        exit_ts = datetime.now().strftime("%H:%M")
         return {
             "matched": True, "student": student_out, "phase": "exit",
             "event": "exit_marked", "confidence": round(confidence, 3),
+            "period_summary": summarise(periods, row["marked_at"], exit_ts, sess["end_time"])
+                              if periods else None,
         }
 
 
@@ -207,9 +235,24 @@ def my_attendance(user: dict = Depends(get_current_user)):
     with get_db() as conn:
         rows = conn.execute(
             """SELECT s.roll_no, s.name, s.class_name,
-                      a.date, a.marked_at, a.exit_at, a.confidence
+                      a.date, a.marked_at, a.exit_at, a.confidence, a.session_id,
+                      ses.title AS session_title, ses.end_time AS block_end
                FROM attendance a JOIN students s ON s.id = a.student_id
-               WHERE s.user_id = ? ORDER BY a.date DESC LIMIT 90""",
+               LEFT JOIN sessions ses ON ses.id = a.session_id
+               WHERE s.user_id = ? ORDER BY a.date DESC, a.marked_at DESC LIMIT 120""",
             (user["id"],),
         ).fetchall()
-    return [dict(r) for r in rows]
+        out = []
+        for r in rows:
+            rec = dict(r)
+            if r["session_id"] is not None:
+                periods = conn.execute(
+                    "SELECT * FROM periods WHERE session_id = ? ORDER BY seq",
+                    (r["session_id"],),
+                ).fetchall()
+                if periods:
+                    rec["period_summary"] = summarise(
+                        periods, r["marked_at"], r["exit_at"], r["block_end"] or ""
+                    )
+            out.append(rec)
+    return out

@@ -22,6 +22,10 @@ class ApiClient {
   String? _token;
   String role = '';
 
+  /// Set when the account is still on its issued password (student accounts
+  /// start on their roll number). The app blocks everything until it is cleared.
+  bool mustChangePassword = false;
+
   Future<void> loadSession() async {
     final prefs = await SharedPreferences.getInstance();
     baseUrl = prefs.getString('baseUrl') ?? kDefaultServer;
@@ -52,6 +56,7 @@ class ApiClient {
     baseUrl = url;
     _token = data['access_token'];
     role = data['role'];
+    mustChangePassword = data['must_change_password'] == true;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('baseUrl', baseUrl);
     await prefs.setString('token', _token!);
@@ -197,6 +202,28 @@ class ApiClient {
   Future<void> deleteSession(int sessionId) async {
     final resp = await http.delete(Uri.parse('$baseUrl/sessions/$sessionId'), headers: _headers);
     _decode(resp);
+  }
+
+  /// Schedule a repeating weekly timetable in advance. Each block becomes one
+  /// session per selected weekday, with its periods attached.
+  Future<Map<String, dynamic>> createTimetable(Map<String, dynamic> payload) async {
+    final resp = await http.post(
+      Uri.parse('$baseUrl/sessions/timetable'),
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode(payload),
+    );
+    return _decode(resp) as Map<String, dynamic>;
+  }
+
+  /// Change your own password. The only write a student token may perform.
+  Future<void> changePassword(String currentPassword, String newPassword) async {
+    final resp = await http.post(
+      Uri.parse('$baseUrl/auth/change-password'),
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode({'current_password': currentPassword, 'new_password': newPassword}),
+    );
+    _decode(resp);
+    mustChangePassword = false;
   }
 
   // --- Parent absence notifications ----------------------------------------

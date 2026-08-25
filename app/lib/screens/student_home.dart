@@ -56,6 +56,18 @@ class _StudentHomeState extends State<StudentHome> {
       final d = DateTime.tryParse(r['date'] ?? '');
       return d != null && d.isAfter(cutoff);
     }).length;
+    // Periods only count once the leaving scan is done, so this figure never
+    // includes a block the student walked out of without scanning.
+    var periodsAttended = 0;
+    var periodsTotal = 0;
+    var awaiting = 0;
+    for (final r in records) {
+      final s = r['period_summary'] as Map<String, dynamic>?;
+      if (s == null) continue;
+      periodsAttended += (s['attended'] as int? ?? 0);
+      periodsTotal += (s['total'] as int? ?? 0);
+      if (s['awaiting_exit'] == true) awaiting++;
+    }
     final name = records.first['name'] ?? '';
     final roll = records.first['roll_no'] ?? '';
 
@@ -93,18 +105,88 @@ class _StudentHomeState extends State<StudentHome> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('${records.length}',
+                    Text(periodsTotal > 0 ? '$periodsAttended/$periodsTotal' : '${records.length}',
                         style: TextStyle(
                             fontSize: 28,
                             fontWeight: FontWeight.bold,
                             color: Colors.green.shade800)),
-                    const Text('total records', style: TextStyle(fontSize: 12)),
+                    Text(periodsTotal > 0 ? 'periods attended' : 'total records',
+                        style: const TextStyle(fontSize: 12)),
                   ],
                 ),
               ),
             ],
           ),
+          if (awaiting > 0) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Icon(Icons.hourglass_top, size: 16, color: Colors.orange.shade800),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '$awaiting block${awaiting == 1 ? '' : 's'} not counted - '
+                    'you did not scan out when leaving',
+                    style: TextStyle(fontSize: 11.5, color: Colors.orange.shade900),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
+      ),
+    );
+  }
+
+  /// One attendance record. A block-based record expands to show which
+  /// periods it actually earned; a plain kiosk record is a single line.
+  Widget _recordTile(Map<String, dynamic> r) {
+    final exit = r['exit_at'];
+    final summary = r['period_summary'] as Map<String, dynamic>?;
+    final title = (r['session_title'] as String?) ?? 'Kiosk attendance';
+    final times = exit == null
+        ? 'In ${r['marked_at']}  ·  no leaving scan yet'
+        : 'In ${r['marked_at']}  ·  Out $exit';
+
+    if (summary == null) {
+      return ListTile(
+        leading: Icon(exit == null ? Icons.hourglass_top : Icons.check_circle,
+            color: exit == null ? Colors.orange : Colors.green),
+        title: Text('${r['date']}  ·  $title'),
+        subtitle: Text(times, style: const TextStyle(fontSize: 12)),
+      );
+    }
+
+    final awaiting = summary['awaiting_exit'] == true;
+    final periods = (summary['periods'] as List).cast<Map<String, dynamic>>();
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+      child: ExpansionTile(
+        leading: Icon(awaiting ? Icons.hourglass_top : Icons.check_circle,
+            color: awaiting ? Colors.orange : Colors.green),
+        title: Text('${r['date']}  ·  $title'),
+        subtitle: Text(
+          awaiting
+              ? 'Not counted yet - you have not scanned out'
+              : '${summary['label']}  ·  $times',
+          style: TextStyle(
+              fontSize: 12, color: awaiting ? Colors.orange.shade800 : Colors.grey.shade700),
+        ),
+        children: periods.map((p) {
+          final (icon, colour, label) = switch (p['status']) {
+            'present' => (Icons.check_circle, Colors.green, 'Present'),
+            'pending_exit' => (Icons.hourglass_empty, Colors.orange, 'Awaiting leaving scan'),
+            _ => (Icons.cancel, Colors.red.shade300, 'Absent'),
+          };
+          return ListTile(
+            dense: true,
+            leading: Icon(icon, size: 18, color: colour),
+            title: Text(p['subject'] ?? ''),
+            subtitle: Text('${p['start_time']} - ${p['end_time']}',
+                style: const TextStyle(fontSize: 11)),
+            trailing: Text(label, style: TextStyle(fontSize: 11, color: colour)),
+          );
+        }).toList(),
       ),
     );
   }
@@ -154,15 +236,7 @@ class _StudentHomeState extends State<StudentHome> {
                           itemCount: _records!.length + 1,
                           itemBuilder: (_, i) {
                             if (i == 0) return _summary();
-                            final r = _records![i - 1];
-                            final exit = r['exit_at'];
-                            return ListTile(
-                              leading: const Icon(Icons.check_circle, color: Colors.green),
-                              title: Text(r['date'] ?? ''),
-                              subtitle: Text(exit == null
-                                  ? 'In at ${r['marked_at']}'
-                                  : 'In at ${r['marked_at']}  ·  Out at $exit'),
-                            );
+                            return _recordTile(_records![i - 1] as Map<String, dynamic>);
                           },
                         ),
                 ),
