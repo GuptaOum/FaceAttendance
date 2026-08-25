@@ -48,3 +48,7 @@ ABSENCE_TEMPLATE = os.environ.get(
     "Dear Parent, {name} (Roll {roll_no}) was marked absent for {label} on {date}. "
     "Please contact the school if this is incorrect. - {school}",
 )
+
+# How early a student may scan in before a block officially starts. Students
+# arrive early; rejecting them leaves no way to record attendance at all.
+EARLY_ENTRY_MINUTES = int(os.environ.get("EARLY_ENTRY_MINUTES", "20"))

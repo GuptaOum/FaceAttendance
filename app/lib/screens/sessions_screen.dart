@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import 'spot_check_screen.dart';
 import 'timetable_screen.dart';
 import 'kiosk_screen.dart';
 import 'report_screen.dart';
@@ -26,6 +27,27 @@ class _SessionsScreenState extends State<SessionsScreen> {
   String get _today {
     final now = DateTime.now();
     return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  }
+
+  /// Roll call is opt-in per block. Turning it on lets the teacher tick anyone
+  /// missing mid-block; leaving it off means the block relies on the entry and
+  /// exit scans alone.
+  Future<void> _toggleSpotCheck(dynamic s) async {
+    final currently = s['spot_check_enabled'] == 1 || s['spot_check_enabled'] == true;
+    try {
+      await ApiClient.instance.setSpotCheckEnabled(s['id'] as int, !currently);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(currently
+            ? 'Roll call turned off for ${s['title']}'
+            : 'Roll call turned on for ${s['title']}'),
+      ));
+      _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    }
   }
 
   Future<void> _load() async {
@@ -264,6 +286,11 @@ class _SessionsScreenState extends State<SessionsScreen> {
                   _chip(Icons.login, 'IN till ${s['entry_until']}', Colors.green.shade700),
                   _chip(Icons.logout, 'OUT ${s['exit_from']}–${s['exit_until']}',
                       Colors.orange.shade800),
+                  if (((s['periods'] as List?) ?? []).isNotEmpty)
+                    _chip(Icons.schedule, '${(s['periods'] as List).length} periods',
+                        Colors.indigo.shade600),
+                  if (s['spot_check_enabled'] == 1 || s['spot_check_enabled'] == true)
+                    _chip(Icons.how_to_reg, 'Roll call on', Colors.purple.shade600),
                 ],
               ),
             ),
@@ -273,6 +300,39 @@ class _SessionsScreenState extends State<SessionsScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
+                    // Roll call is opt-in per block, so the teacher decides
+                    // whether this block uses it at all.
+                    IconButton(
+                      icon: Icon(
+                        s['spot_check_enabled'] == 1 || s['spot_check_enabled'] == true
+                            ? Icons.how_to_reg
+                            : Icons.how_to_reg_outlined,
+                        size: 20,
+                        color: s['spot_check_enabled'] == 1 || s['spot_check_enabled'] == true
+                            ? Colors.purple
+                            : Colors.grey,
+                      ),
+                      tooltip: s['spot_check_enabled'] == 1 || s['spot_check_enabled'] == true
+                          ? 'Roll call is on - tap to turn off'
+                          : 'Roll call is off - tap to turn on',
+                      onPressed: () => _toggleSpotCheck(s),
+                    ),
+                    if (isToday &&
+                        (s['spot_check_enabled'] == 1 || s['spot_check_enabled'] == true))
+                      TextButton.icon(
+                        icon: const Icon(Icons.checklist, size: 18),
+                        label: const Text('Roll call'),
+                        onPressed: () async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => SpotCheckScreen(
+                                  sessionId: s['id'], sessionTitle: s['title']),
+                            ),
+                          );
+                          _load();
+                        },
+                      ),
                     TextButton.icon(
                       icon: const Icon(Icons.assessment_outlined, size: 18),
                       label: const Text('Report'),

@@ -45,6 +45,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     entry_until TEXT NOT NULL DEFAULT '',
     exit_from TEXT NOT NULL DEFAULT '',
     exit_until TEXT NOT NULL DEFAULT '',
+    -- Optional per-block roll call. Off by default: the teacher opts in.
+    spot_check_enabled INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -61,6 +63,25 @@ CREATE TABLE IF NOT EXISTS periods (
     UNIQUE(session_id, seq)
 );
 
+-- Optional mid-block roll call. Entirely the teacher's choice: they tap once,
+-- glance at the room and tick anyone missing. No student queues at the kiosk,
+-- so it costs seconds instead of disrupting the lesson.
+CREATE TABLE IF NOT EXISTS spot_checks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    checked_at TEXT NOT NULL,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_ts TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+
+-- Students the teacher marked missing at that moment. Their presence interval
+-- is truncated there, so they forfeit the rest of the block.
+CREATE TABLE IF NOT EXISTS spot_check_absences (
+    spot_check_id INTEGER NOT NULL REFERENCES spot_checks(id) ON DELETE CASCADE,
+    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    PRIMARY KEY (spot_check_id, student_id)
+);
+
 CREATE TABLE IF NOT EXISTS attendance (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
@@ -68,6 +89,8 @@ CREATE TABLE IF NOT EXISTS attendance (
     date TEXT NOT NULL,
     marked_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     exit_at TEXT,
+    exit_source TEXT NOT NULL DEFAULT 'scan',
+    override_note TEXT NOT NULL DEFAULT '',
     confidence REAL NOT NULL
 );
 
@@ -103,6 +126,9 @@ def _migrate(conn):
     if user_cols and "must_change_password" not in user_cols:
         conn.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0")
     att_cols = {r["name"] for r in conn.execute("PRAGMA table_info(attendance)")}
+    if att_cols and "exit_source" not in att_cols:
+        conn.execute("ALTER TABLE attendance ADD COLUMN exit_source TEXT NOT NULL DEFAULT 'scan'")
+        conn.execute("ALTER TABLE attendance ADD COLUMN override_note TEXT NOT NULL DEFAULT ''")
     if att_cols and "exit_at" not in att_cols:
         conn.executescript("""
             ALTER TABLE attendance RENAME TO attendance_old;
@@ -120,6 +146,8 @@ def _migrate(conn):
             DROP TABLE attendance_old;
         """)
     sess_cols = {r["name"] for r in conn.execute("PRAGMA table_info(sessions)")}
+    if sess_cols and "spot_check_enabled" not in sess_cols:
+        conn.execute("ALTER TABLE sessions ADD COLUMN spot_check_enabled INTEGER NOT NULL DEFAULT 0")
     if sess_cols and "entry_until" not in sess_cols:
         conn.execute("ALTER TABLE sessions ADD COLUMN entry_until TEXT NOT NULL DEFAULT ''")
         conn.execute("ALTER TABLE sessions ADD COLUMN exit_from TEXT NOT NULL DEFAULT ''")

@@ -76,11 +76,30 @@ def period_status(
     return (PRESENT if exit_known else PENDING_EXIT), round(covered, 3)
 
 
-def summarise(periods: list, entry_at: str | None, exit_at: str | None, block_end: str) -> dict:
+def effective_exit(exit_at: str | None, failed_spot_check_at: str | None) -> tuple[str | None, bool]:
+    """Where the student's presence actually ends.
+
+    A student marked missing at a roll call was not in the room, so their
+    presence stops there even if they came back to scan out later. Whichever
+    comes first wins.
+    """
+    if failed_spot_check_at is None:
+        return exit_at, False
+    if exit_at is None:
+        return failed_spot_check_at, True
+    a, b = _to_minutes(exit_at), _to_minutes(failed_spot_check_at)
+    if a is None or b is None or b >= a:
+        return exit_at, False
+    return failed_spot_check_at, True
+
+
+def summarise(periods: list, entry_at: str | None, exit_at: str | None, block_end: str,
+              failed_spot_check_at: str | None = None) -> dict:
     """Per-period breakdown plus counts, e.g. '2 of 3 periods'."""
+    cut_exit, cut_by_check = effective_exit(exit_at, failed_spot_check_at)
     rows = []
     for p in periods:
-        status, covered = period_status(dict(p), entry_at, exit_at, block_end)
+        status, covered = period_status(dict(p), entry_at, cut_exit, block_end)
         rows.append({
             "seq": p["seq"],
             "subject": p["subject"],
@@ -101,4 +120,6 @@ def summarise(periods: list, entry_at: str | None, exit_at: str | None, block_en
         "total": len(rows),
         "label": f"{attended} of {len(rows)} periods" if rows else "",
         "awaiting_exit": pending > 0,
+        "cut_by_spot_check": cut_by_check,
+        "spot_check_at": failed_spot_check_at if cut_by_check else None,
     }

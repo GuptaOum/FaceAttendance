@@ -44,6 +44,63 @@ class _ReportScreenState extends State<ReportScreen> {
   String get _dayStr =>
       '${_day.year}-${_day.month.toString().padLeft(2, '0')}-${_day.day.toString().padLeft(2, '0')}';
 
+  /// Record a leaving time the kiosk never captured.
+  ///
+  /// Attendance only counts once a student scans out, which is deliberate, but
+  /// someone who genuinely attended and simply forgot would otherwise lose the
+  /// whole block. The correction is stored as a teacher override, not disguised
+  /// as a scan.
+  Future<void> _setExitTime(dynamic s) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.now(),
+      helpText: 'When did ${s['name']} leave?',
+    );
+    if (picked == null || !mounted) return;
+    final note = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Mark ${s['name']} as leaving at '
+            '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Their periods will be worked out from this time. It is recorded '
+              'as your correction, not as a scan.',
+              style: TextStyle(fontSize: 12.5),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: note,
+              maxLength: 200,
+              decoration: const InputDecoration(
+                labelText: 'Reason (optional)',
+                hintText: 'e.g. was in class, forgot to scan out',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final hh = picked.hour.toString().padLeft(2, '0');
+      final mm = picked.minute.toString().padLeft(2, '0');
+      await ApiClient.instance.overrideExit(s['attendance_id'], '$hh:$mm', note.text.trim());
+      _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    }
+  }
+
   Future<void> _load() async {
     setState(() {
       _report = null;
@@ -140,7 +197,20 @@ class _ReportScreenState extends State<ReportScreen> {
                                   ? 'IN ${(s['marked_at'] as String).substring(11)} · no exit scan ⚠'
                                   : 'IN ${(s['marked_at'] as String).substring(11)} → OUT ${(s['exit_at'] as String).substring(11)}')
                               : '${s['class_name']} · marked at ${s['marked_at']}'),
-                          trailing: IconButton(
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // A student who attended but forgot to scan out
+                              // would otherwise lose the whole block, so the
+                              // teacher can set the leaving time by hand.
+                              if (widget.sessionId != null && s['exit_at'] == null)
+                                IconButton(
+                                  icon: const Icon(Icons.edit_calendar_outlined,
+                                      color: Colors.orange),
+                                  tooltip: 'Set leaving time',
+                                  onPressed: () => _setExitTime(s),
+                                ),
+                              IconButton(
                             icon: const Icon(Icons.delete_outline),
                             tooltip: 'Remove this attendance',
                             onPressed: () async {
@@ -172,6 +242,8 @@ class _ReportScreenState extends State<ReportScreen> {
                                 }
                               }
                             },
+                              ),
+                            ],
                           ),
                         )),
                     const Divider(),

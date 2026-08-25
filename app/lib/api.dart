@@ -215,6 +215,45 @@ class ApiClient {
     return _decode(resp) as Map<String, dynamic>;
   }
 
+  /// Turn the optional mid-block roll call on or off for one block.
+  Future<void> setSpotCheckEnabled(int sessionId, bool enabled) async {
+    final resp = await http.patch(
+      Uri.parse('$baseUrl/sessions/$sessionId'),
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode({'spot_check_enabled': enabled}),
+    );
+    _decode(resp);
+  }
+
+  /// Students currently marked present in a block, for the roll call list.
+  Future<Map<String, dynamic>> whoIsPresent(int sessionId) async {
+    final resp =
+        await http.get(Uri.parse('$baseUrl/sessions/$sessionId/present'), headers: _headers);
+    return _decode(resp) as Map<String, dynamic>;
+  }
+
+  /// Record a roll call. [absentStudentIds] are those the teacher could not see;
+  /// the server exempts anyone who had not arrived or had already left.
+  Future<Map<String, dynamic>> runSpotCheck(int sessionId, List<int> absentStudentIds,
+      {String? checkedAt}) async {
+    final resp = await http.post(
+      Uri.parse('$baseUrl/sessions/$sessionId/spot-check'),
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode({'absent_student_ids': absentStudentIds, 'checked_at': ?checkedAt}),
+    );
+    return _decode(resp) as Map<String, dynamic>;
+  }
+
+  /// Teacher correction: set a leaving time for a student who forgot to scan out.
+  Future<void> overrideExit(int attendanceId, String exitAt, String note) async {
+    final resp = await http.patch(
+      Uri.parse('$baseUrl/attendance/$attendanceId'),
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode({'exit_at': exitAt, 'note': note}),
+    );
+    _decode(resp);
+  }
+
   /// Change your own password. The only write a student token may perform.
   Future<void> changePassword(String currentPassword, String newPassword) async {
     final resp = await http.post(

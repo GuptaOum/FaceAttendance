@@ -1,7 +1,9 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from pydantic import BaseModel
 
+from .. import config
 from ..db import get_db
 from ..periods import summarise
 from ..security import get_current_user, require_teacher
@@ -31,7 +33,17 @@ def _session_phase(sess) -> str | None:
     'exit'       - inside the exit buffer
     """
     now = datetime.now().strftime("%H:%M")
-    if sess["start_time"] <= now <= sess["entry_until"]:
+    # Students queue up before the bell; opening the door a little early means
+    # an early arrival can still be recorded instead of being turned away.
+    try:
+        opens = (datetime.strptime(sess["start_time"], "%H:%M")
+                 - timedelta(minutes=config.EARLY_ENTRY_MINUTES)).strftime("%H:%M")
+    except ValueError:
+        opens = sess["start_time"]
+    if opens > sess["start_time"]:  # would have wrapped past midnight
+        opens = "00:00"
+
+    if opens <= now <= sess["entry_until"]:
         return "entry"
     if sess["exit_from"] <= now <= sess["exit_until"]:
         return "exit"
@@ -251,8 +263,61 @@ def my_attendance(user: dict = Depends(get_current_user)):
                     (r["session_id"],),
                 ).fetchall()
                 if periods:
+                    # A roll call the student was missing from ends their
+                    # presence there, whatever the exit scan later said.
+                    failed = conn.execute(
+                        """SELECT MIN(c.checked_at) AS at
+                           FROM spot_check_absences a JOIN spot_checks c ON c.id = a.spot_check_id
+                           WHERE c.session_id = ? AND a.student_id = (
+                               SELECT id FROM students WHERE user_id = ?)""",
+                        (r["session_id"], user["id"]),
+                    ).fetchone()
                     rec["period_summary"] = summarise(
-                        periods, r["marked_at"], r["exit_at"], r["block_end"] or ""
+                        periods, r["marked_at"], r["exit_at"], r["block_end"] or "",
+                        failed_spot_check_at=failed["at"] if failed else None,
                     )
             out.append(rec)
     return out
+
+
+class AttendanceOverride(BaseModel):
+    """Teacher correction for a block the scans got wrong."""
+    exit_at: str | None = None
+    note: str = ""
+
+
+@router.patch("/{attendance_id}")
+def override_attendance(
+    attendance_id: int, body: AttendanceOverride, user: dict = Depends(require_teacher)
+):
+    """Set a leaving time by hand.
+
+    Attendance only counts once the student scans out, which is deliberate, but
+    a student who genuinely attended and simply forgot would otherwise lose the
+    whole block with no way back. The correction is recorded as a teacher
+    override rather than disguised as a scan.
+    """
+    with get_db() as conn:
+        row = conn.execute(
+            """SELECT a.id, a.session_id FROM attendance a
+               JOIN students s ON s.id = a.student_id
+               WHERE a.id = ? AND s.owner_id = ?""",
+            (attendance_id, user["id"]),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Attendance record not found")
+        if body.exit_at is not None:
+            try:
+                datetime.strptime(body.exit_at.strip(), "%H:%M")
+            except ValueError:
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_ENTITY, "Leaving time must be HH:MM"
+                )
+            conn.execute(
+                """UPDATE attendance
+                   SET exit_at = ?, exit_source = 'teacher', override_note = ?
+                   WHERE id = ?""",
+                (body.exit_at.strip(), body.note.strip()[:300], attendance_id),
+            )
+        updated = conn.execute("SELECT * FROM attendance WHERE id = ?", (attendance_id,)).fetchone()
+    return dict(updated)

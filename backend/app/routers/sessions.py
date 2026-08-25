@@ -29,6 +29,7 @@ class SessionIn(BaseModel):
     exit_from: str | None = None
     exit_until: str | None = None
     periods: list[PeriodIn] = Field(default_factory=list)
+    spot_check_enabled: bool = False
 
 
 class BlockIn(BaseModel):
@@ -40,6 +41,7 @@ class BlockIn(BaseModel):
     exit_from: str | None = None
     exit_until: str | None = None
     periods: list[PeriodIn] = Field(default_factory=list)
+    spot_check_enabled: bool = False
 
 
 class TimetableIn(BaseModel):
@@ -105,9 +107,15 @@ def _validate(body: SessionIn):
     return title, entry_until, exit_from, exit_until
 
 
-def _insert_periods(conn, session_id: int, periods: list) -> int:
-    """Store the periods inside a block, ordered by start time."""
+def _validate_periods(periods: list, block_start: str, block_end: str) -> list:
+    """Check periods before storing them.
+
+    A period outside its block can never be earned, and overlapping periods
+    double-count the same minutes. Both silently corrupt every attendance
+    percentage, so they are rejected rather than accepted quietly.
+    """
     ordered = sorted(periods, key=lambda p: p.start_time)
+    previous_end = None
     for seq, p in enumerate(ordered, start=1):
         subject = p.subject.strip() or f"Period {seq}"
         _parse_time(p.start_time, "period start")
@@ -117,9 +125,29 @@ def _insert_periods(conn, session_id: int, periods: list) -> int:
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
                 f"{subject}: end time must be after start time",
             )
+        if p.start_time < block_start or p.end_time > block_end:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                f"{subject} ({p.start_time}-{p.end_time}) is outside the block "
+                f"{block_start}-{block_end}. Students could never attend it.",
+            )
+        if previous_end is not None and p.start_time < previous_end:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                f"{subject} starts at {p.start_time}, before the previous period ends "
+                f"at {previous_end}. Periods must not overlap.",
+            )
+        previous_end = p.end_time
+    return ordered
+
+
+def _insert_periods(conn, session_id: int, periods: list, block_start: str, block_end: str) -> int:
+    """Store the periods inside a block, ordered by start time."""
+    ordered = _validate_periods(periods, block_start, block_end)
+    for seq, p in enumerate(ordered, start=1):
         conn.execute(
             "INSERT INTO periods (session_id, seq, subject, start_time, end_time) VALUES (?, ?, ?, ?, ?)",
-            (session_id, seq, subject, p.start_time, p.end_time),
+            (session_id, seq, p.subject.strip() or f"Period {seq}", p.start_time, p.end_time),
         )
     return len(ordered)
 
@@ -130,13 +158,14 @@ def create_session(body: SessionIn, user: dict = Depends(require_teacher)):
     with get_db() as conn:
         cur = conn.execute(
             """INSERT INTO sessions
-               (owner_id, title, group_name, date, start_time, end_time, entry_until, exit_from, exit_until)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (owner_id, title, group_name, date, start_time, end_time, entry_until, exit_from, exit_until, spot_check_enabled)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (user["id"], title, body.group_name.strip(), body.date,
-             body.start_time, body.end_time, entry_until, exit_from, exit_until),
+             body.start_time, body.end_time, entry_until, exit_from, exit_until,
+             1 if body.spot_check_enabled else 0),
         )
         session_id = cur.lastrowid
-        _insert_periods(conn, session_id, body.periods)
+        _insert_periods(conn, session_id, body.periods, body.start_time, body.end_time)
         row = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
         periods = conn.execute(
             "SELECT seq, subject, start_time, end_time FROM periods WHERE session_id = ? ORDER BY seq",
@@ -170,6 +199,7 @@ def create_timetable(body: TimetableIn, user: dict = Depends(require_teacher)):
             start_time=b.start_time, end_time=b.end_time, entry_until=b.entry_until,
             exit_from=b.exit_from, exit_until=b.exit_until,
         ))
+        _validate_periods(b.periods, b.start_time, b.end_time)
         prepared.append((b, checked))
 
     created, skipped = [], []
@@ -195,12 +225,13 @@ def create_timetable(body: TimetableIn, user: dict = Depends(require_teacher)):
                     cur = conn.execute(
                         """INSERT INTO sessions
                            (owner_id, title, group_name, date, start_time, end_time,
-                            entry_until, exit_from, exit_until)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                            entry_until, exit_from, exit_until, spot_check_enabled)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         (user["id"], title, body.group_name.strip(), day_str,
-                         b.start_time, b.end_time, entry_until, exit_from, exit_until),
+                         b.start_time, b.end_time, entry_until, exit_from, exit_until,
+                         1 if b.spot_check_enabled else 0),
                     )
-                    n = _insert_periods(conn, cur.lastrowid, b.periods)
+                    n = _insert_periods(conn, cur.lastrowid, b.periods, b.start_time, b.end_time)
                     created.append({"date": day_str, "weekday": WEEKDAY_NAMES[day.weekday()],
                                     "title": title, "periods": n})
     return {
@@ -237,3 +268,126 @@ def delete_session(session_id: int, user: dict = Depends(require_teacher)):
         )
         if cur.rowcount == 0:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+
+
+class SpotCheckIn(BaseModel):
+    """Students the teacher could not see in the room right now."""
+    absent_student_ids: list[int] = Field(default_factory=list)
+    checked_at: str | None = None
+
+
+@router.get("/{session_id}/present")
+def who_is_present(session_id: int, user: dict = Depends(require_teacher)):
+    """Students currently marked present in this block, for a roll call."""
+    with get_db() as conn:
+        sess = conn.execute(
+            "SELECT * FROM sessions WHERE id = ? AND owner_id = ?", (session_id, user["id"])
+        ).fetchone()
+        if sess is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+        rows = conn.execute(
+            """SELECT s.id, s.roll_no, s.name, a.marked_at, a.exit_at
+               FROM attendance a JOIN students s ON s.id = a.student_id
+               WHERE a.session_id = ? ORDER BY s.roll_no""",
+            (session_id,),
+        ).fetchall()
+    return {"session": dict(sess), "present": [dict(r) for r in rows]}
+
+
+@router.post("/{session_id}/spot-check", status_code=status.HTTP_201_CREATED)
+def run_spot_check(session_id: int, body: SpotCheckIn, user: dict = Depends(require_teacher)):
+    """Record an optional mid-block roll call.
+
+    Entirely the teacher's choice - nothing schedules this. Students marked
+    missing have their presence truncated at this moment and forfeit the rest
+    of the block. Anyone who had not arrived yet, or had already scanned out,
+    is untouched: they are not claiming this time in the first place.
+    """
+    checked_at = (body.checked_at or datetime.now().strftime(TIME_FMT)).strip()
+    _parse_time(checked_at, "spot check")
+    with get_db() as conn:
+        sess = conn.execute(
+            "SELECT * FROM sessions WHERE id = ? AND owner_id = ?", (session_id, user["id"])
+        ).fetchone()
+        if sess is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+        if not sess["spot_check_enabled"]:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "Spot checks are turned off for this block. Turn them on first.",
+            )
+
+        eligible = {
+            r["student_id"]: r
+            for r in conn.execute(
+                """SELECT a.student_id, a.marked_at, a.exit_at
+                   FROM attendance a WHERE a.session_id = ?""",
+                (session_id,),
+            ).fetchall()
+        }
+        cur = conn.execute(
+            "INSERT INTO spot_checks (session_id, checked_at, created_by) VALUES (?, ?, ?)",
+            (session_id, checked_at, user["id"]),
+        )
+        check_id = cur.lastrowid
+
+        applied, exempt = [], []
+        for sid in set(body.absent_student_ids):
+            row = eligible.get(sid)
+            if row is None:
+                exempt.append({"student_id": sid, "reason": "not marked present in this block"})
+                continue
+            arrived = (row["marked_at"] or "")[-8:][:5]
+            if arrived and arrived > checked_at:
+                exempt.append({"student_id": sid, "reason": f"had not arrived yet (came {arrived})"})
+                continue
+            left = (row["exit_at"] or "")[-8:][:5]
+            if left and left <= checked_at:
+                exempt.append({"student_id": sid, "reason": f"already scanned out at {left}"})
+                continue
+            conn.execute(
+                "INSERT OR IGNORE INTO spot_check_absences (spot_check_id, student_id) VALUES (?, ?)",
+                (check_id, sid),
+            )
+            applied.append(sid)
+    return {
+        "spot_check_id": check_id, "checked_at": checked_at,
+        "marked_absent": len(applied), "exempt": exempt,
+    }
+
+
+@router.get("/{session_id}/spot-checks")
+def list_spot_checks(session_id: int, user: dict = Depends(require_teacher)):
+    with get_db() as conn:
+        sess = conn.execute(
+            "SELECT id FROM sessions WHERE id = ? AND owner_id = ?", (session_id, user["id"])
+        ).fetchone()
+        if sess is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+        rows = conn.execute(
+            """SELECT c.id, c.checked_at, c.created_ts, COUNT(a.student_id) AS absent_count
+               FROM spot_checks c LEFT JOIN spot_check_absences a ON a.spot_check_id = c.id
+               WHERE c.session_id = ? GROUP BY c.id ORDER BY c.checked_at""",
+            (session_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+class SessionToggle(BaseModel):
+    spot_check_enabled: bool
+
+
+@router.patch("/{session_id}")
+def update_session(session_id: int, body: SessionToggle, user: dict = Depends(require_teacher)):
+    """Turn the optional roll call on or off for one block."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM sessions WHERE id = ? AND owner_id = ?", (session_id, user["id"])
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+        conn.execute(
+            "UPDATE sessions SET spot_check_enabled = ? WHERE id = ?",
+            (1 if body.spot_check_enabled else 0, session_id),
+        )
+    return {"id": session_id, "spot_check_enabled": body.spot_check_enabled}
