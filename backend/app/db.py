@@ -47,6 +47,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     exit_until TEXT NOT NULL DEFAULT '',
     -- Optional per-block roll call. Off by default: the teacher opts in.
     spot_check_enabled INTEGER NOT NULL DEFAULT 0,
+    -- Minutes after a period starts that a late arrival may still join it.
+    period_entry_grace INTEGER NOT NULL DEFAULT 10,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -146,6 +148,8 @@ def _migrate(conn):
             DROP TABLE attendance_old;
         """)
     sess_cols = {r["name"] for r in conn.execute("PRAGMA table_info(sessions)")}
+    if sess_cols and "period_entry_grace" not in sess_cols:
+        conn.execute("ALTER TABLE sessions ADD COLUMN period_entry_grace INTEGER NOT NULL DEFAULT 10")
     if sess_cols and "spot_check_enabled" not in sess_cols:
         conn.execute("ALTER TABLE sessions ADD COLUMN spot_check_enabled INTEGER NOT NULL DEFAULT 0")
     if sess_cols and "entry_until" not in sess_cols:

@@ -67,7 +67,10 @@ class _KioskScreenState extends State<KioskScreen> {
             event == 'entry_already' ||
             event == 'exit_already';
         final failure = event == 'no_entry';
-        if (!already && !failure) {
+        // Refusals: nothing was recorded, so no success chime, but each needs
+        // its own explanation rather than the generic error.
+        final refused = event == 'period_entry_closed' || event == 'same_period_scan';
+        if (!already && !failure && !refused) {
           try {
             _sound.invokeMethod('playRing');
             Future.delayed(const Duration(seconds: 1), () => _sound.invokeMethod('stopRing'));
@@ -87,6 +90,24 @@ class _KioskScreenState extends State<KioskScreen> {
             _message = event == 'exit_already'
                 ? '${student['name']}, exit already recorded at ${result['exit_at']}'
                 : '${student['name']}, already marked at ${result['marked_at'] ?? ''}';
+          } else if (event == 'period_entry_closed') {
+            // Too far into a class to join it. They come back at the start of
+            // the next period rather than being let in and quietly credited.
+            _icon = Icons.schedule;
+            _color = Colors.orange;
+            _message = result['next_entry_at'] != null
+                ? '${student['name']}, too late for '
+                    '${result['missed_period'] ?? 'this class'}.\n'
+                    'Come back at ${result['next_entry_at']} '
+                    '(scan by ${result['next_entry_closes']}).'
+                : '${student['name']}, entry has closed for today.';
+          } else if (event == 'same_period_scan') {
+            // Attend the class, not just the doorway.
+            _icon = Icons.hourglass_top;
+            _color = Colors.orange;
+            _message = '${student['name']}, you are already marked in for '
+                '${result['period'] ?? 'this class'}.\n'
+                'Stay till ${result['period_ends']} — leaving now counts for nothing.';
           } else if (event == 'early_exit_marked') {
             // Leaving mid-block (feeling unwell, called away). They keep the
             // periods they actually sat through instead of losing the block.

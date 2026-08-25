@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from .. import config
 from ..db import get_db
-from ..periods import summarise
+from ..periods import late_entry_window, same_period as _same_period, summarise
 from ..security import get_current_user, require_teacher
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
@@ -146,6 +146,28 @@ async def recognize(
             (student_id, session_id),
         ).fetchone()
 
+        # A late arrival may only join at the start of a period. Turning up
+        # halfway through a class does not earn it, so they wait for the next
+        # one rather than being admitted and quietly credited.
+        if phase == "late_entry" and row is None:
+            periods = conn.execute(
+                "SELECT * FROM periods WHERE session_id = ? ORDER BY seq", (session_id,)
+            ).fetchall()
+            if periods:
+                gate = late_entry_window(
+                    [dict(p) for p in periods],
+                    datetime.now().strftime("%H:%M"),
+                    sess["period_entry_grace"] or config.PERIOD_ENTRY_GRACE_MINUTES,
+                )
+                if not gate["allowed"]:
+                    return {
+                        "matched": True, "student": student_out,
+                        "phase": "late_entry", "event": "period_entry_closed",
+                        "missed_period": gate["period"],
+                        "next_entry_at": gate["next_at"],
+                        "next_entry_closes": gate["closes_at"],
+                    }
+
         if phase in ("entry", "late_entry"):
             if row is not None:
                 # Already scanned in. A second scan well into the block is
@@ -154,6 +176,24 @@ async def recognize(
                 # them keep the periods they actually sat through; refusing it
                 # would cost them the whole block.
                 minutes_in = _minutes_between(row["marked_at"], datetime.now())
+                now_hhmm = datetime.now().strftime("%H:%M")
+                periods = conn.execute(
+                    "SELECT * FROM periods WHERE session_id = ? ORDER BY seq", (session_id,)
+                ).fetchall()
+                # Scanning out inside the same period you scanned into earns
+                # nothing, so refuse it and say why. Sitting through the class
+                # is the point; a scan at each end of five minutes is not.
+                same_period = _same_period(
+                    [dict(p) for p in periods], row["marked_at"], now_hhmm
+                )
+                if row["exit_at"] is None and same_period is not None:
+                    return {
+                        "matched": True, "student": student_out,
+                        "phase": "same_period", "event": "same_period_scan",
+                        "period": same_period["subject"],
+                        "period_ends": same_period["end_time"],
+                        "marked_at": row["marked_at"],
+                    }
                 if row["exit_at"] is None and minutes_in >= config.MIN_DWELL_MINUTES:
                     conn.execute(
                         "UPDATE attendance SET exit_at = datetime('now', 'localtime') WHERE id = ?",

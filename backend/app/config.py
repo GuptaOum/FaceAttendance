@@ -56,3 +56,8 @@ EARLY_ENTRY_MINUTES = int(os.environ.get("EARLY_ENTRY_MINUTES", "20"))
 # How long a student must have been in the block before a second scan is read
 # as them leaving early rather than a double tap at the kiosk.
 MIN_DWELL_MINUTES = float(os.environ.get("MIN_DWELL_MINUTES", "10"))
+
+# A late arrival may only join at the start of a period, within this many
+# minutes of it beginning. Wandering in halfway through a class does not earn
+# it, so they wait for the next period instead.
+PERIOD_ENTRY_GRACE_MINUTES = int(os.environ.get("PERIOD_ENTRY_GRACE_MINUTES", "10"))

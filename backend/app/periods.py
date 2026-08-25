@@ -76,6 +76,53 @@ def period_status(
     return (PRESENT if exit_known else PENDING_EXIT), round(covered, 3)
 
 
+def _fmt(minutes: int) -> str:
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+def late_entry_window(periods: list, now: str, grace: int) -> dict:
+    """Whether a late arrival may join right now, and if not, when they can.
+
+    A student who missed the 10:00 class does not get to stroll in at 11:30 and
+    be counted. They join at the start of the next period, within `grace`
+    minutes of it beginning, or they wait for the one after that. Half a class
+    is not attendance.
+    """
+    n = _to_minutes(now)
+    if n is None or not periods:
+        return {"allowed": True, "period": None, "next_at": None, "closes_at": None}
+
+    for p in periods:
+        start = _to_minutes(p["start_time"])
+        end = _to_minutes(p["end_time"])
+        if start is None or end is None:
+            continue
+        # The gate never outlives the period it belongs to.
+        closes = min(start + grace, end)
+        if start <= n <= closes:
+            return {
+                "allowed": True, "period": p["subject"],
+                "next_at": None, "closes_at": _fmt(closes),
+            }
+
+    upcoming = [
+        _to_minutes(p["start_time"]) for p in periods
+        if (_to_minutes(p["start_time"]) or -1) > n
+    ]
+    nxt = min(upcoming) if upcoming else None
+    current = next(
+        (p["subject"] for p in periods
+         if (_to_minutes(p["start_time"]) or 0) <= n < (_to_minutes(p["end_time"]) or 0)),
+        None,
+    )
+    return {
+        "allowed": False,
+        "period": current,
+        "next_at": _fmt(nxt) if nxt is not None else None,
+        "closes_at": _fmt(nxt + grace) if nxt is not None else None,
+    }
+
+
 def effective_exit(exit_at: str | None, failed_spot_check_at: str | None) -> tuple[str | None, bool]:
     """Where the student's presence actually ends.
 
@@ -123,3 +170,22 @@ def summarise(periods: list, entry_at: str | None, exit_at: str | None, block_en
         "cut_by_spot_check": cut_by_check,
         "spot_check_at": failed_spot_check_at if cut_by_check else None,
     }
+
+
+def same_period(periods: list, entry_at: str | None, now: str) -> dict | None:
+    """The period a student both entered and is now trying to leave within.
+
+    Returns None once they have crossed into a later period, which is when
+    leaving becomes meaningful: they have actually sat through something.
+    """
+    e = _to_minutes(entry_at) if entry_at else None
+    n = _to_minutes(now)
+    if e is None or n is None:
+        return None
+    for p in periods:
+        start, end = _to_minutes(p["start_time"]), _to_minutes(p["end_time"])
+        if start is None or end is None:
+            continue
+        if start <= e < end and start <= n < end:
+            return p
+    return None
