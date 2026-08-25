@@ -198,12 +198,18 @@ def attendance_report(
 
 @router.get("/me")
 def my_attendance(user: dict = Depends(get_current_user)):
+    """A student's own attendance. Read-only; students have no other endpoint.
+
+    Scoped by students.user_id rather than matching username to roll_no: roll
+    numbers are only unique per teacher, so name-matching would show a student
+    the records of a same-numbered student belonging to a different teacher.
+    """
     with get_db() as conn:
         rows = conn.execute(
-            """SELECT a.date, a.marked_at, a.exit_at, a.confidence
+            """SELECT s.roll_no, s.name, s.class_name,
+                      a.date, a.marked_at, a.exit_at, a.confidence
                FROM attendance a JOIN students s ON s.id = a.student_id
-               JOIN users u ON u.username = s.roll_no
-               WHERE u.username = ? ORDER BY a.date DESC LIMIT 90""",
-            (user["username"],),
+               WHERE s.user_id = ? ORDER BY a.date DESC LIMIT 90""",
+            (user["id"],),
         ).fetchall()
     return [dict(r) for r in rows]

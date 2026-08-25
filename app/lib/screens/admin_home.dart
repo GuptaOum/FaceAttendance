@@ -104,13 +104,42 @@ class _AdminHomeState extends State<AdminHome> {
     );
     if (created != true || rollNo.text.trim().isEmpty || name.text.trim().isEmpty) return;
     try {
-      await ApiClient.instance.createStudent(
+      final result = await ApiClient.instance.createStudent(
         rollNo.text.trim(),
         name.text.trim(),
         className.text.trim(),
         parentPhone: parentPhone.text.trim(),
       );
       await _refresh();
+      final login = result['login_username'] as String?;
+      if (login != null && mounted) {
+        // The teacher needs to pass these on; the student cannot self-register.
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            icon: const Icon(Icons.key_outlined),
+            title: const Text('Student login created'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Give these to ${name.text.trim()} so they can check their own attendance:'),
+                const SizedBox(height: 12),
+                SelectableText('Username:  $login',
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 15)),
+                SelectableText('Password:  ${result['login_password']}',
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 15)),
+                const SizedBox(height: 12),
+                Text('They can only view their own attendance - nothing can be changed from a student login.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+              ],
+            ),
+            actions: [
+              FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Got it')),
+            ],
+          ),
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));

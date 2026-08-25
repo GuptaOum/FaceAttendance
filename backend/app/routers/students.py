@@ -7,7 +7,7 @@ from .. import config
 from ..db import get_db
 from ..face_engine import EnrollmentError
 from ..notify import PHONE_RE
-from ..security import require_teacher
+from ..security import hash_password, require_teacher
 
 router = APIRouter(prefix="/students", tags=["students"])
 
@@ -38,6 +38,25 @@ def _clean_phone(raw: str) -> str:
     return phone
 
 
+def _create_student_login(conn, roll_no: str, owner_username: str) -> tuple[str, int] | tuple[None, None]:
+    """Issue a read-only login for a student.
+
+    The username is the roll number. Usernames are globally unique but roll
+    numbers are only unique per teacher, so if another teacher already claimed
+    this roll number we fall back to "<roll_no>.<teacher>". The initial
+    password is the roll number; students should be told to change it.
+    """
+    for candidate in (roll_no, f"{roll_no}.{owner_username}"):
+        taken = conn.execute("SELECT id FROM users WHERE username = ?", (candidate,)).fetchone()
+        if taken is None:
+            cur = conn.execute(
+                "INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'student')",
+                (candidate, hash_password(roll_no)),
+            )
+            return candidate, cur.lastrowid
+    return None, None
+
+
 def _owned_student(conn, student_id: int, user: dict):
     student = conn.execute("SELECT * FROM students WHERE id = ?", (student_id,)).fetchone()
     if student is None or student["owner_id"] != user["id"]:
@@ -63,14 +82,16 @@ def create_student(body: StudentIn, user: dict = Depends(require_teacher)):
         ).fetchone()
         if existing:
             raise HTTPException(status.HTTP_409_CONFLICT, "You already have a student with this roll number")
+        login_username, login_user_id = _create_student_login(conn, roll_no, user["username"])
         cur = conn.execute(
-            """INSERT INTO students (owner_id, roll_no, name, class_name, parent_phone)
-               VALUES (?, ?, ?, ?, ?)""",
-            (user["id"], roll_no, name, class_name, parent_phone),
+            """INSERT INTO students (owner_id, roll_no, name, class_name, parent_phone, user_id)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (user["id"], roll_no, name, class_name, parent_phone, login_user_id),
         )
         student_id = cur.lastrowid
     return {"id": student_id, "roll_no": roll_no, "name": name,
-            "class_name": class_name, "parent_phone": parent_phone}
+            "class_name": class_name, "parent_phone": parent_phone,
+            "login_username": login_username, "login_password": roll_no if login_username else None}
 
 
 @router.patch("/{student_id}")
@@ -112,8 +133,11 @@ def list_students(user: dict = Depends(require_teacher)):
 @router.delete("/{student_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_student(student_id: int, request: Request, user: dict = Depends(require_teacher)):
     with get_db() as conn:
-        _owned_student(conn, student_id, user)
+        student = _owned_student(conn, student_id, user)
         conn.execute("DELETE FROM students WHERE id = ?", (student_id,))
+        # Remove the student's login too, so a deleted student cannot sign in.
+        if student["user_id"]:
+            conn.execute("DELETE FROM users WHERE id = ? AND role = 'student'", (student["user_id"],))
     request.app.state.engine.reload_index()
 
 

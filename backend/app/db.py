@@ -19,6 +19,9 @@ CREATE TABLE IF NOT EXISTS students (
     name TEXT NOT NULL,
     class_name TEXT NOT NULL DEFAULT '',
     parent_phone TEXT NOT NULL DEFAULT '',
+    -- The student's own read-only login. Nullable so a student can exist
+    -- before (or without) a login being issued.
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(owner_id, roll_no)
 );
@@ -107,6 +110,16 @@ def _migrate(conn):
     stu_cols = {r["name"] for r in conn.execute("PRAGMA table_info(students)")}
     if stu_cols and "parent_phone" not in stu_cols:
         conn.execute("ALTER TABLE students ADD COLUMN parent_phone TEXT NOT NULL DEFAULT ''")
+    if stu_cols and "user_id" not in stu_cols:
+        conn.execute("ALTER TABLE students ADD COLUMN user_id INTEGER REFERENCES users(id)")
+        # Adopt any pre-existing login that used the old username = roll_no
+        # convention, so existing students keep working after the upgrade.
+        conn.execute(
+            """UPDATE students SET user_id = (
+                   SELECT u.id FROM users u
+                   WHERE u.username = students.roll_no AND u.role = 'student'
+               ) WHERE user_id IS NULL"""
+        )
 
 
 @contextmanager

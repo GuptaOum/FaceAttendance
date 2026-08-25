@@ -46,14 +46,14 @@ flutter run
 
 On the login screen enter the server URL (e.g. `http://<your-pc-lan-ip>:8000` — phone and PC must be on the same network), then `admin` / `admin123`.
 
-**Workflow:** Add Student → tap the camera icon → capture 5 guided poses → Upload. Then open **Kiosk Mode** and point the device at students; attendance is marked automatically. Students log in with their roll number (default password = roll number) to see their own history.
+**Workflow:** Add Student → tap the camera icon → capture 5 guided poses → Upload. Then open **Kiosk Mode** and point the device at students; attendance is marked automatically. Students log in with their roll number (default password = roll number) to see their own attendance. The student view is read-only.
 
 ## API summary
 
 | Endpoint | Role | Purpose |
 |---|---|---|
 | `POST /auth/login` | — | JWT login (admin or student) |
-| `POST /students` | admin | Register student (also creates their login) |
+| `POST /students` | teacher | Register student (also issues their read-only login) |
 | `GET /students` | admin | List students + enrollment status |
 | `POST /students/{id}/enroll` | admin | Upload 5–10 face images |
 | `DELETE /students/{id}` | admin | Remove student, embeddings, attendance |

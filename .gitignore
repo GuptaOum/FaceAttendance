@@ -7,3 +7,6 @@ __pycache__/
 # embeddings. They must never reach the remote.
 backups/
 *.db.bak*
+
+# Built APKs live in GitHub Releases, not in git (53MB each)
+dist/
