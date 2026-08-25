@@ -59,9 +59,6 @@ class _TimetableScreenState extends State<TimetableScreen> {
       '${_startDate.month.toString().padLeft(2, '0')}-'
       '${_startDate.day.toString().padLeft(2, '0')}';
 
-  Future<TimeOfDay?> _pickTime(TimeOfDay initial) =>
-      showTimePicker(context: context, initialTime: initial);
-
   Future<void> _editPeriod(_BlockDraft block, _PeriodDraft p) async {
     final subject = TextEditingController(text: p.subject);
     var start = p.start;
