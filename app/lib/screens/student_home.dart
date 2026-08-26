@@ -256,7 +256,10 @@ class _StudentHomeState extends State<StudentHome> {
         color: Colors.indigo.shade50,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
         children: [
           Expanded(
             child: Column(
@@ -298,6 +301,26 @@ class _StudentHomeState extends State<StudentHome> {
               ],
             ),
           ),
+        ],
+          ),
+          // Blocks with no leaving scan are not counted, so say so plainly
+          // rather than letting the percentage quietly look worse.
+          if (pending > 0) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Icon(Icons.hourglass_top, size: 15, color: Colors.orange.shade800),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '$pending day${pending == 1 ? '' : 's'} not counted yet - '
+                    'no leaving scan was recorded',
+                    style: TextStyle(fontSize: 11, color: Colors.orange.shade900),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
