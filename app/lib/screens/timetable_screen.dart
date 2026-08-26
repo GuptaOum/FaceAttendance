@@ -397,7 +397,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: 7,
-              separatorBuilder: (_, __) => const SizedBox(width: 6),
+              separatorBuilder: (_, _) => const SizedBox(width: 6),
               itemBuilder: (_, i) {
                 final count = _byDay[i]?.length ?? 0;
                 return ChoiceChip(
