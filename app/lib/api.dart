@@ -204,8 +204,8 @@ class ApiClient {
     _decode(resp);
   }
 
-  /// Schedule a repeating weekly timetable in advance. Each block becomes one
-  /// session per selected weekday, with its periods attached.
+  /// Schedule a repeating weekly timetable in advance. Each weekday carries its
+  /// own blocks, so a Saturday half day can differ from a Monday.
   Future<Map<String, dynamic>> createTimetable(Map<String, dynamic> payload) async {
     final resp = await http.post(
       Uri.parse('$baseUrl/sessions/timetable'),

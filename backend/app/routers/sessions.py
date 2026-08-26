@@ -44,19 +44,33 @@ class BlockIn(BaseModel):
     spot_check_enabled: bool = False
 
 
+class DayIn(BaseModel):
+    """One weekday's own blocks. 0 = Monday .. 6 = Sunday."""
+    weekday: int = Field(ge=0, le=6)
+    blocks: list[BlockIn] = Field(default_factory=list)
+
+
 class TimetableIn(BaseModel):
     """A weekly timetable scheduled ahead of time.
 
-    Blocks repeat on the chosen weekdays for `weeks` weeks starting from
-    `start_date`, so a teacher sets the week up once instead of creating each
-    day by hand.
+    Real timetables differ by day - a Saturday half day may run one period in
+    the afternoon where a Monday runs three - so each weekday carries its own
+    blocks via `days`. The older `weekdays` + `blocks` form is still accepted
+    and simply applies one set of blocks to every listed day.
     """
     group_name: str = ""
     start_date: str
     weeks: int = Field(default=1, ge=1, le=26)
-    weekdays: list[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4])
-    blocks: list[BlockIn]
+    days: list[DayIn] = Field(default_factory=list)
+    weekdays: list[int] = Field(default_factory=list)
+    blocks: list[BlockIn] = Field(default_factory=list)
     replace_existing: bool = False
+
+    def per_day(self) -> list[DayIn]:
+        """Normalise both request shapes into one blocks-per-weekday list."""
+        if self.days:
+            return [d for d in self.days if d.blocks]
+        return [DayIn(weekday=w, blocks=self.blocks) for w in sorted(set(self.weekdays))]
 
 
 def _parse_time(value: str, label: str) -> datetime:
@@ -185,32 +199,36 @@ def create_timetable(body: TimetableIn, user: dict = Depends(require_teacher)):
         start = datetime.strptime(body.start_date, "%Y-%m-%d").date()
     except ValueError:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Invalid start date")
-    if not body.blocks:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Add at least one block")
-    weekdays = sorted({d for d in body.weekdays if 0 <= d <= 6})
-    if not weekdays:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Select at least one weekday")
+    schedule = body.per_day()
+    if not schedule:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "Add at least one day with a block"
+        )
 
-    # Validate every block up front so a bad block cannot leave a half-built week.
-    prepared = []
-    for b in body.blocks:
-        checked = _validate(SessionIn(
-            title=b.title, group_name=body.group_name, date=body.start_date,
-            start_time=b.start_time, end_time=b.end_time, entry_until=b.entry_until,
-            exit_from=b.exit_from, exit_until=b.exit_until,
-        ))
-        _validate_periods(b.periods, b.start_time, b.end_time)
-        prepared.append((b, checked))
+    # Validate every block of every day up front, so one bad block cannot leave
+    # a half-built week behind.
+    prepared: dict[int, list] = {}
+    for day in schedule:
+        for b in day.blocks:
+            checked = _validate(SessionIn(
+                title=b.title, group_name=body.group_name, date=body.start_date,
+                start_time=b.start_time, end_time=b.end_time, entry_until=b.entry_until,
+                exit_from=b.exit_from, exit_until=b.exit_until,
+            ))
+            _validate_periods(b.periods, b.start_time, b.end_time)
+            prepared.setdefault(day.weekday, []).append((b, checked))
 
     created, skipped = [], []
     with get_db() as conn:
         for week in range(body.weeks):
             for offset in range(7):
                 day = start + timedelta(days=week * 7 + offset)
-                if day.weekday() not in weekdays or day < start:
+                if day.weekday() not in prepared or day < start:
                     continue
                 day_str = day.isoformat()
-                for b, (title, entry_until, exit_from, exit_until) in prepared:
+                # Each weekday runs its own blocks, so a Saturday half day can
+                # carry fewer periods than a Monday.
+                for b, (title, entry_until, exit_from, exit_until) in prepared[day.weekday()]:
                     existing = conn.execute(
                         """SELECT id FROM sessions
                            WHERE owner_id = ? AND date = ? AND title = ? AND start_time = ?""",
