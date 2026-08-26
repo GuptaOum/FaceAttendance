@@ -390,7 +390,16 @@ class _TimetableScreenState extends State<TimetableScreen> {
             ),
             onChanged: (v) => _group = v.trim(),
           ),
-          const SizedBox(height: 12),
+          SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Replace existing sessions', style: TextStyle(fontSize: 14)),
+            subtitle: const Text('Off: days already scheduled are left alone',
+                style: TextStyle(fontSize: 11)),
+            value: _replace,
+            onChanged: (v) => setState(() => _replace = v),
+          ),
+          const SizedBox(height: 4),
           // Each weekday is edited separately: Saturday can be a half day.
           SizedBox(
             height: 42,
